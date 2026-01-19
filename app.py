@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots  # 이중축 사용을 위해 필요
 
 # ---------------------------------------------------------
 # 1. 페이지 설정
@@ -79,15 +80,15 @@ df = df_raw[
 ]
 
 # ---------------------------------------------------------
-# 4. 탭 구성 (Tab 5 추가됨!)
+# 4. 탭 구성 (Tab 5 내용이 Tab 1 하단으로 통합됨)
 # ---------------------------------------------------------
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📈 전환 추세", "📉 판매량 영향", "🗺️ 지역 위험도", "🏢 유형별 비교", "📊 구성비 상세 분석"
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📈 전환 추세 및 상세 분석", "📉 판매량 영향", "🗺️ 지역 위험도", "🏢 유형별 비교"
 ])
 
-# [Tab 1~4: 기존 코드와 동일]
+# [Tab 1: 월별 추세 + 연도별/지역별 이중축 차트]
 with tab1:
-    st.subheader("가스레인지 잔존 vs 인덕션 이탈 추이")
+    st.markdown("#### 1️⃣ 월별 트렌드 (Time Series)")
     df_m = df.groupby('Date')[['총청구계량기수', '가스레인지연결전수', '인덕션_추정_수']].sum().reset_index()
     df_m['전환율'] = (df_m['인덕션_추정_수'] / df_m['총청구계량기수']) * 100
     
@@ -97,7 +98,89 @@ with tab1:
     fig.add_trace(go.Scatter(x=df_m['Date'], y=df_m['전환율'], name='전환율(%)', yaxis='y2', mode='lines+markers', line=dict(color='red')))
     fig.update_layout(yaxis2=dict(overlaying='y', side='right'), hovermode="x unified", legend=dict(orientation="h", y=1.1))
     st.plotly_chart(fig, use_container_width=True)
+    
+    st.divider() # 구분선 추가
+    
+    st.markdown("#### 2️⃣ 연도별 & 지역별 상세 현황 (Dual Axis)")
+    st.info("💡 **범례 설명:** 막대(Bar)는 세대수[좌측축], 꺾은선(Line)은 인덕션 전환율(%)[우측축]을 나타냅니다.")
 
+    # 데이터 가공
+    df['Year'] = df['Date'].dt.year
+    
+    col1, col2 = st.columns(2)
+    
+    # [차트 A] 연도별 이중축 차트
+    with col1:
+        # 연도별 집계
+        df_year = df.groupby('Year')[['총청구계량기수', '가스레인지연결전수', '인덕션_추정_수']].sum().reset_index()
+        df_year['전환율'] = (df_year['인덕션_추정_수'] / df_year['총청구계량기수']) * 100
+        
+        # 이중축 설정
+        fig_y = make_subplots(specs=[[{"secondary_y": True}]])
+        
+        # 막대 1: 가스레인지
+        fig_y.add_trace(
+            go.Bar(x=df_year['Year'], y=df_year['가스레인지연결전수'], name='가스레인지(세대)', marker_color='#1f77b4'),
+            secondary_y=False
+        )
+        # 막대 2: 인덕션 (Stacked)
+        fig_y.add_trace(
+            go.Bar(x=df_year['Year'], y=df_year['인덕션_추정_수'], name='인덕션(세대)', marker_color='#ff7f0e'),
+            secondary_y=False
+        )
+        # 선: 전환율
+        fig_y.add_trace(
+            go.Scatter(x=df_year['Year'], y=df_year['전환율'], name='전환율(%)', mode='lines+markers+text', 
+                       text=df_year['전환율'].apply(lambda x: f"{x:.1f}%"), textposition="top center",
+                       marker_color='red', line=dict(width=3)),
+            secondary_y=True
+        )
+        
+        fig_y.update_layout(
+            title="연도별 구성 및 전환율 추이",
+            barmode='stack', 
+            legend=dict(orientation="h", y=-0.2)
+        )
+        fig_y.update_yaxes(title_text="세대수", secondary_y=False)
+        fig_y.update_yaxes(title_text="전환율(%)", secondary_y=True, range=[0, df_year['전환율'].max()*1.2]) # Y축 범위 자동 조정
+        st.plotly_chart(fig_y, use_container_width=True)
+
+    # [차트 B] 지역별 이중축 차트
+    with col2:
+        current_year = df['Year'].max()
+        df_region = df[df['Year'] == current_year].groupby('시군구')[['총청구계량기수', '가스레인지연결전수', '인덕션_추정_수']].sum().reset_index()
+        df_region['전환율'] = (df_region['인덕션_추정_수'] / df_region['총청구계량기수']) * 100
+        df_region = df_region.sort_values(by='전환율', ascending=False) # 전환율 높은 순 정렬
+        
+        fig_r = make_subplots(specs=[[{"secondary_y": True}]])
+        
+        # 막대 1: 가스레인지
+        fig_r.add_trace(
+            go.Bar(x=df_region['시군구'], y=df_region['가스레인지연결전수'], name='가스레인지(세대)', marker_color='#1f77b4', showlegend=False),
+            secondary_y=False
+        )
+        # 막대 2: 인덕션
+        fig_r.add_trace(
+            go.Bar(x=df_region['시군구'], y=df_region['인덕션_추정_수'], name='인덕션(세대)', marker_color='#ff7f0e', showlegend=False),
+            secondary_y=False
+        )
+        # 선: 전환율
+        fig_r.add_trace(
+            go.Scatter(x=df_region['시군구'], y=df_region['전환율'], name='전환율(%)', mode='lines+markers+text',
+                       text=df_region['전환율'].apply(lambda x: f"{x:.1f}%"), textposition="top center",
+                       marker_color='red', showlegend=False),
+            secondary_y=True
+        )
+        
+        fig_r.update_layout(
+            title=f"{current_year}년 지역별 현황 (전환율 순)",
+            barmode='stack'
+        )
+        fig_r.update_yaxes(title_text="세대수", secondary_y=False)
+        fig_r.update_yaxes(title_text="전환율(%)", secondary_y=True, range=[0, df_region['전환율'].max()*1.2])
+        st.plotly_chart(fig_r, use_container_width=True)
+
+# [Tab 2~4: 기존 코드 유지]
 with tab2:
     st.subheader("인덕션 전환율과 세대당 사용량(PPH) 관계")
     df_s = df.groupby(['시군구', 'Date'])[['인덕션_전환율', '세대당_사용량']].mean().reset_index().dropna()
@@ -121,74 +204,3 @@ with tab4:
     df_t['전환율'] = (1 - df_t['가스레인지연결전수'] / df_t['총청구계량기수']) * 100
     fig4 = px.line(df_t, x='Date', y='전환율', color='용도', markers=True)
     st.plotly_chart(fig4, use_container_width=True)
-
-# ---------------------------------------------------------
-# [Tab 5: 새로 추가된 그래프 4종 세트]
-# ---------------------------------------------------------
-with tab5:
-    st.subheader("📊 연도별 & 지역별 구성비 상세 분석")
-    st.markdown("전체 청구 세대(Total)를 **가스레인지**와 **인덕션(추정)**으로 나누어 시각화했습니다.")
-    
-    # 데이터 가공 (Plotly Bar차트용 포맷 변환)
-    # 연도 추출
-    df['Year'] = df['Date'].dt.year
-    
-    # 1. 연도별 데이터 집계
-    df_year = df.groupby('Year')[['가스레인지연결전수', '인덕션_추정_수']].sum().reset_index()
-    # Long Format으로 변환 (범례 처리를 위해)
-    df_year_long = df_year.melt(id_vars='Year', value_vars=['가스레인지연결전수', '인덕션_추정_수'], var_name='유형', value_name='세대수')
-    
-    # 2. 지역별 데이터 집계 (최신 연도 기준)
-    current_year = df['Year'].max()
-    df_region = df[df['Year'] == current_year].groupby('시군구')[['가스레인지연결전수', '인덕션_추정_수']].sum().reset_index()
-    df_region_long = df_region.melt(id_vars='시군구', value_vars=['가스레인지연결전수', '인덕션_추정_수'], var_name='유형', value_name='세대수')
-
-    # --- 화면 배치 (2x2 Grid) ---
-    col1, col2 = st.columns(2)
-    
-    # [1] 연도별 누적 막대 (절대값)
-    with col1:
-        st.markdown("##### 1️⃣ 연도별 세대수 변화 (절대값)")
-        fig_y1 = px.bar(df_year_long, x='Year', y='세대수', color='유형', 
-                        title="연도별 가스 vs 인덕션 세대수",
-                        text_auto='.2s', # 숫자 표시
-                        color_discrete_map={'가스레인지연결전수': '#1f77b4', '인덕션_추정_수': '#ff7f0e'})
-        st.plotly_chart(fig_y1, use_container_width=True)
-
-    # [2] 연도별 100% 누적 막대 (비중)
-    with col2:
-        st.markdown("##### 2️⃣ 연도별 비중 변화 (%)")
-        # 100% 스택 바 차트를 만들기 위해 groupnorm 사용 불필요 (px.bar에서 기본 지원 안함 -> 데이터 처리 필요없음, layout 설정으로 가능)
-        # 하지만 명확하게 하기 위해 normalization 옵션 활용
-        fig_y2 = px.bar(df_year_long, x='Year', y='세대수', color='유형', 
-                        title="연도별 점유율 변화 (100% 기준)",
-                        text_auto='.1f', 
-                        color_discrete_map={'가스레인지연결전수': '#1f77b4', '인덕션_추정_수': '#ff7f0e'})
-        # bar mode를 'relative'가 아닌 '100% stacked'로 변경하려면 update_layout 필요하지만, 
-        # Plotly Express에서는 barnorm='percent'를 지원하지 않는 경우가 있어 직접 계산하거나 layout 수정.
-        # 가장 쉬운 방법: layout 업데이트
-        fig_y2.update_layout(barmode='stack', yaxis=dict(tickformat=".0%"), barnorm='percent')
-        st.plotly_chart(fig_y2, use_container_width=True)
-
-    col3, col4 = st.columns(2)
-
-    # [3] 구군별 누적 막대 (절대값)
-    with col3:
-        st.markdown(f"##### 3️⃣ {current_year}년 지역별 세대수 (절대값)")
-        # 세대수 많은 순서로 정렬
-        df_region_long = df_region_long.sort_values(by='세대수', ascending=False)
-        fig_r1 = px.bar(df_region_long, x='시군구', y='세대수', color='유형',
-                        title="지역별 가스 vs 인덕션 규모 비교",
-                        text_auto='.2s',
-                        color_discrete_map={'가스레인지연결전수': '#1f77b4', '인덕션_추정_수': '#ff7f0e'})
-        st.plotly_chart(fig_r1, use_container_width=True)
-
-    # [4] 구군별 100% 누적 막대 (비중)
-    with col4:
-        st.markdown(f"##### 4️⃣ {current_year}년 지역별 전환율 비교 (%)")
-        fig_r2 = px.bar(df_region_long, x='시군구', y='세대수', color='유형',
-                        title="지역별 인덕션 침투율 비교",
-                        text_auto='.1f',
-                        color_discrete_map={'가스레인지연결전수': '#1f77b4', '인덕션_추정_수': '#ff7f0e'})
-        fig_r2.update_layout(barmode='stack', yaxis=dict(tickformat=".0%"), barnorm='percent')
-        st.plotly_chart(fig_r2, use_container_width=True)
