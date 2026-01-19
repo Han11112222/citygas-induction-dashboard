@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots  # 이중축 사용을 위해 필요
+from plotly.subplots import make_subplots
 
 # ---------------------------------------------------------
 # 1. 페이지 설정
@@ -50,6 +50,12 @@ def load_data_from_github(url):
 
     return df
 
+# CSV 다운로드 변환 함수
+@st.cache_data
+def convert_df(df):
+    # 한글 깨짐 방지 (utf-8-sig)
+    return df.to_csv(index=False).encode('utf-8-sig')
+
 # ---------------------------------------------------------
 # 3. 메인 로직
 # ---------------------------------------------------------
@@ -80,18 +86,19 @@ df = df_raw[
 ]
 
 # ---------------------------------------------------------
-# 4. 탭 구성 (Tab 5 내용이 Tab 1 하단으로 통합됨)
+# 4. 탭 구성
 # ---------------------------------------------------------
 tab1, tab2, tab3, tab4 = st.tabs([
     "📈 전환 추세 및 상세 분석", "📉 판매량 영향", "🗺️ 지역 위험도", "🏢 유형별 비교"
 ])
 
-# [Tab 1: 월별 추세 + 연도별/지역별 이중축 차트]
+# [Tab 1: 월별 추세 + 연도별/지역별 이중축 차트 + 데이터 표]
 with tab1:
     st.markdown("#### 1️⃣ 월별 트렌드 (Time Series)")
     df_m = df.groupby('Date')[['총청구계량기수', '가스레인지연결전수', '인덕션_추정_수']].sum().reset_index()
     df_m['전환율'] = (df_m['인덕션_추정_수'] / df_m['총청구계량기수']) * 100
     
+    # 월별 차트
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df_m['Date'], y=df_m['가스레인지연결전수'], name='가스레인지', stackgroup='one'))
     fig.add_trace(go.Scatter(x=df_m['Date'], y=df_m['인덕션_추정_수'], name='인덕션(추정)', stackgroup='one'))
@@ -99,86 +106,73 @@ with tab1:
     fig.update_layout(yaxis2=dict(overlaying='y', side='right'), hovermode="x unified", legend=dict(orientation="h", y=1.1))
     st.plotly_chart(fig, use_container_width=True)
     
-    st.divider() # 구분선 추가
+    # [월별 데이터 표 & 다운로드]
+    with st.expander("📄 월별 상세 데이터 보기 (클릭)", expanded=False):
+        st.dataframe(df_m.style.format({'전환율': '{:.2f}%', '총청구계량기수': '{:,.0f}', '가스레인지연결전수': '{:,.0f}', '인덕션_추정_수': '{:,.0f}'}))
+        st.download_button(
+            label="📥 월별 데이터 다운로드 (CSV)",
+            data=convert_df(df_m),
+            file_name='월별_인덕션_전환_데이터.csv',
+            mime='text/csv'
+        )
+
+    st.divider() # 구분선
     
     st.markdown("#### 2️⃣ 연도별 & 지역별 상세 현황 (Dual Axis)")
     st.info("💡 **범례 설명:** 막대(Bar)는 세대수[좌측축], 꺾은선(Line)은 인덕션 전환율(%)[우측축]을 나타냅니다.")
 
-    # 데이터 가공
     df['Year'] = df['Date'].dt.year
-    
     col1, col2 = st.columns(2)
     
-    # [차트 A] 연도별 이중축 차트
+    # [차트 A] 연도별
     with col1:
-        # 연도별 집계
         df_year = df.groupby('Year')[['총청구계량기수', '가스레인지연결전수', '인덕션_추정_수']].sum().reset_index()
         df_year['전환율'] = (df_year['인덕션_추정_수'] / df_year['총청구계량기수']) * 100
         
-        # 이중축 설정
         fig_y = make_subplots(specs=[[{"secondary_y": True}]])
-        
-        # 막대 1: 가스레인지
-        fig_y.add_trace(
-            go.Bar(x=df_year['Year'], y=df_year['가스레인지연결전수'], name='가스레인지(세대)', marker_color='#1f77b4'),
-            secondary_y=False
-        )
-        # 막대 2: 인덕션 (Stacked)
-        fig_y.add_trace(
-            go.Bar(x=df_year['Year'], y=df_year['인덕션_추정_수'], name='인덕션(세대)', marker_color='#ff7f0e'),
-            secondary_y=False
-        )
-        # 선: 전환율
-        fig_y.add_trace(
-            go.Scatter(x=df_year['Year'], y=df_year['전환율'], name='전환율(%)', mode='lines+markers+text', 
-                       text=df_year['전환율'].apply(lambda x: f"{x:.1f}%"), textposition="top center",
-                       marker_color='red', line=dict(width=3)),
-            secondary_y=True
-        )
-        
-        fig_y.update_layout(
-            title="연도별 구성 및 전환율 추이",
-            barmode='stack', 
-            legend=dict(orientation="h", y=-0.2)
-        )
+        fig_y.add_trace(go.Bar(x=df_year['Year'], y=df_year['가스레인지연결전수'], name='가스레인지', marker_color='#1f77b4'), secondary_y=False)
+        fig_y.add_trace(go.Bar(x=df_year['Year'], y=df_year['인덕션_추정_수'], name='인덕션', marker_color='#ff7f0e'), secondary_y=False)
+        fig_y.add_trace(go.Scatter(x=df_year['Year'], y=df_year['전환율'], name='전환율(%)', mode='lines+markers+text', text=df_year['전환율'].apply(lambda x: f"{x:.1f}%"), textposition="top center", marker_color='red'), secondary_y=True)
+        fig_y.update_layout(title="연도별 구성 및 전환율 추이", barmode='stack', legend=dict(orientation="h", y=-0.2))
         fig_y.update_yaxes(title_text="세대수", secondary_y=False)
-        fig_y.update_yaxes(title_text="전환율(%)", secondary_y=True, range=[0, df_year['전환율'].max()*1.2]) # Y축 범위 자동 조정
+        fig_y.update_yaxes(title_text="전환율(%)", secondary_y=True, range=[0, df_year['전환율'].max()*1.2])
         st.plotly_chart(fig_y, use_container_width=True)
 
-    # [차트 B] 지역별 이중축 차트
+        # [연도별 데이터 표]
+        with st.expander("📄 연도별 데이터 (클릭)"):
+            st.dataframe(df_year.style.format({'전환율': '{:.2f}%', '총청구계량기수': '{:,.0f}'}))
+            st.download_button(
+                label="📥 연도별 데이터 다운로드 (CSV)",
+                data=convert_df(df_year),
+                file_name='연도별_인덕션_전환_데이터.csv',
+                mime='text/csv'
+            )
+
+    # [차트 B] 지역별
     with col2:
         current_year = df['Year'].max()
         df_region = df[df['Year'] == current_year].groupby('시군구')[['총청구계량기수', '가스레인지연결전수', '인덕션_추정_수']].sum().reset_index()
         df_region['전환율'] = (df_region['인덕션_추정_수'] / df_region['총청구계량기수']) * 100
-        df_region = df_region.sort_values(by='전환율', ascending=False) # 전환율 높은 순 정렬
+        df_region = df_region.sort_values(by='전환율', ascending=False)
         
         fig_r = make_subplots(specs=[[{"secondary_y": True}]])
-        
-        # 막대 1: 가스레인지
-        fig_r.add_trace(
-            go.Bar(x=df_region['시군구'], y=df_region['가스레인지연결전수'], name='가스레인지(세대)', marker_color='#1f77b4', showlegend=False),
-            secondary_y=False
-        )
-        # 막대 2: 인덕션
-        fig_r.add_trace(
-            go.Bar(x=df_region['시군구'], y=df_region['인덕션_추정_수'], name='인덕션(세대)', marker_color='#ff7f0e', showlegend=False),
-            secondary_y=False
-        )
-        # 선: 전환율
-        fig_r.add_trace(
-            go.Scatter(x=df_region['시군구'], y=df_region['전환율'], name='전환율(%)', mode='lines+markers+text',
-                       text=df_region['전환율'].apply(lambda x: f"{x:.1f}%"), textposition="top center",
-                       marker_color='red', showlegend=False),
-            secondary_y=True
-        )
-        
-        fig_r.update_layout(
-            title=f"{current_year}년 지역별 현황 (전환율 순)",
-            barmode='stack'
-        )
+        fig_r.add_trace(go.Bar(x=df_region['시군구'], y=df_region['가스레인지연결전수'], name='가스레인지', marker_color='#1f77b4', showlegend=False), secondary_y=False)
+        fig_r.add_trace(go.Bar(x=df_region['시군구'], y=df_region['인덕션_추정_수'], name='인덕션', marker_color='#ff7f0e', showlegend=False), secondary_y=False)
+        fig_r.add_trace(go.Scatter(x=df_region['시군구'], y=df_region['전환율'], name='전환율(%)', mode='lines+markers+text', text=df_region['전환율'].apply(lambda x: f"{x:.1f}%"), textposition="top center", marker_color='red', showlegend=False), secondary_y=True)
+        fig_r.update_layout(title=f"{current_year}년 지역별 현황 (전환율 순)", barmode='stack')
         fig_r.update_yaxes(title_text="세대수", secondary_y=False)
         fig_r.update_yaxes(title_text="전환율(%)", secondary_y=True, range=[0, df_region['전환율'].max()*1.2])
         st.plotly_chart(fig_r, use_container_width=True)
+
+        # [지역별 데이터 표]
+        with st.expander("📄 지역별 데이터 (클릭)"):
+            st.dataframe(df_region.style.format({'전환율': '{:.2f}%', '총청구계량기수': '{:,.0f}'}))
+            st.download_button(
+                label="📥 지역별 데이터 다운로드 (CSV)",
+                data=convert_df(df_region),
+                file_name='지역별_인덕션_전환_데이터.csv',
+                mime='text/csv'
+            )
 
 # [Tab 2~4: 기존 코드 유지]
 with tab2:
