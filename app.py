@@ -74,16 +74,26 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    st.header("🍳 취사 PPH 설정")
-    st.info("※ 10m³는 임의 추정값입니다. 실제 8월(하절기) 평균 사용량 등을 참고하여 입력해주세요.")
     
-    # PPH 입력 위젯
+    # [수정됨] PPH 설정 및 설명 추가
+    st.header("🍳 취사 PPH 설정")
+    
+    with st.expander("💡 PPH란 무엇인가요?", expanded=True):
+        st.markdown("""
+        **PPH (Per Point Household)** 세대당 월평균 가스 사용량을 의미합니다.
+        
+        여기서는 **'난방을 제외한 순수 취사 사용량'**을 입력해야 정확한 손실량을 계산할 수 있습니다. 
+        *(보통 하절기 8월 평균 사용량을 참고합니다.)*
+        """)
+    
+    # PPH 입력 위젯 (라벨 수정됨)
     input_pph = st.number_input(
-        "세대당 월평균 취사량 (m³)", 
+        "적용할 취사 PPH (m³)", 
         min_value=0.0, 
         max_value=100.0, 
         value=10.0, 
-        step=0.5
+        step=0.5,
+        help="인덕션 전환 1세대당 발생하는 월별 가스 판매 손실량을 설정합니다."
     )
     
     st.markdown("---")
@@ -134,21 +144,17 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
 
     # [2] 연도별 수량 및 손실량
     st.subheader("2️⃣ 연도별 수량 및 손실 추정량 분석")
-    st.info(f"💡 **적용된 취사 PPH:** {input_pph}m³")
+    st.info(f"💡 **적용된 PPH:** {input_pph}m³ (좌측 사이드바에서 변경 가능)")
     
     df_year = df.groupby('Year')[['총청구계량기수', '가스레인지연결전수', '인덕션_추정_수', '사용량(m3)']].sum().reset_index()
     df_year['전환율'] = (df_year['인덕션_추정_수'] / df_year['총청구계량기수']) * 100
     
-    # 손실량 및 손실률 계산
-    # df_year 데이터는 '월별 합계'이므로, 단순히 (연간 총 인덕션 추정 수 * PPH)를 하면 과대계상될 수 있습니다.
-    # 정확한 '연간 손실량' = (월별 인덕션 수 * PPH)의 합계입니다.
-    # 따라서 원본 df에서 계산 후 합칩니다.
-    
+    # 손실량 계산
     df['월별손실추정'] = df['인덕션_추정_수'] * input_pph
     df_loss_year = df.groupby('Year')['월별손실추정'].sum().reset_index()
     df_year = pd.merge(df_year, df_loss_year, on='Year')
     
-    # 손실 점유율(%) 계산 = 손실량 / (실제사용량 + 손실량) * 100
+    # 손실 점유율(%) 계산
     df_year['잠재총사용량'] = df_year['사용량(m3)'] + df_year['월별손실추정']
     df_year['손실점유율'] = (df_year['월별손실추정'] / df_year['잠재총사용량']) * 100
     
@@ -167,16 +173,12 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
         fig_q.update_yaxes(title_text="전환율(%)", secondary_y=True, range=[0, df_year['전환율'].max()*1.2])
         st.plotly_chart(fig_q, use_container_width=True)
 
-    # (우) 연도별 사용량 + 손실량 + 손실점유율(%) [요청사항 반영]
+    # (우) 연도별 사용량 + 손실량
     with col2:
         fig_u = make_subplots(specs=[[{"secondary_y": True}]])
-        
-        # 막대 1: 실제 판매량
         fig_u.add_trace(go.Bar(x=df_year['Year'], y=df_year['사용량(m3)'], name='실제 판매량', marker_color=COLOR_GAS), secondary_y=False)
-        # 막대 2: 손실 추정량
         fig_u.add_trace(go.Bar(x=df_year['Year'], y=df_year['월별손실추정'], name='손실 추정량(이탈분)', marker_color=COLOR_INDUCTION), secondary_y=False)
         
-        # 선: 손실 점유율(%)
         fig_u.add_trace(go.Scatter(
             x=df_year['Year'], y=df_year['손실점유율'],
             mode='lines+markers+text',
@@ -186,9 +188,9 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
             line=dict(color=COLOR_LINE, width=3)
         ), secondary_y=True)
         
-        fig_u.update_layout(title=f"실제 판매량 vs 손실 추정량 (손실 비중%)", barmode='stack', legend=dict(orientation="h", y=-0.2))
+        fig_u.update_layout(title="실제 판매량 vs 손실 추정량 (손실 비중%)", barmode='stack', legend=dict(orientation="h", y=-0.2))
         fig_u.update_yaxes(title_text="사용량(m³)", secondary_y=False)
-        fig_u.update_yaxes(title_text="손실 비중(%)", secondary_y=True, range=[0, df_year['손실점유율'].max()*1.5]) # 범위 넉넉하게
+        fig_u.update_yaxes(title_text="손실 비중(%)", secondary_y=True, range=[0, df_year['손실점유율'].max()*1.5])
         st.plotly_chart(fig_u, use_container_width=True)
     
     st.markdown("###### 📋 연도별 상세 데이터")
@@ -240,7 +242,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     sel_region = st.selectbox("🏙️ 지역(구군)을 선택하세요:", sorted(df['시군구'].unique()))
     
     # 지역 필터링
-    df_r_sub = df[df['시군구'] == sel_region]
+    df_r_sub = df[df['시군구'] == sel_region].copy()
     
     # 손실량 계산 (월별 합산)
     df_r_sub['월별손실추정'] = df_r_sub['인덕션_추정_수'] * input_pph
