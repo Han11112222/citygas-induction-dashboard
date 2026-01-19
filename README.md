@@ -1,1 +1,6 @@
-# citygas-induction-dashboard
+# 도시가스 인덕션 전환 분석 대시보드
+
+이 프로젝트는 도시가스 가정용 고객의 인덕션 이탈 추이를 분석하는 대시보드입니다.
+
+## 실행 방법
+streamlit run app.py
