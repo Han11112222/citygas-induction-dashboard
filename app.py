@@ -15,21 +15,32 @@ st.set_page_config(
 st.title("🔥 도시가스 가정용 연료전환(인덕션) 추이 분석")
 
 # ---------------------------------------------------------
-# 2. 데이터 로드 함수 (공백 없는 컬럼 전용)
+# 2. 데이터 로드 함수 (엑셀/CSV 모두 지원)
 # ---------------------------------------------------------
 @st.cache_data
 def load_data(file):
-    # 1. 파일 읽기 (인코딩 자동 대응)
+    # 파일 확장자에 따라 읽는 방식 자동 선택
     try:
-        df = pd.read_csv(file, encoding='cp949')
-    except:
-        df = pd.read_csv(file, encoding='utf-8')
+        if file.name.endswith('.csv'):
+            # CSV 읽기 시도
+            try:
+                df = pd.read_csv(file, encoding='cp949')
+            except:
+                df = pd.read_csv(file, encoding='utf-8')
+        else:
+            # 엑셀(xlsx, xls) 읽기
+            df = pd.read_excel(file)
+            
+    except Exception as e:
+        st.error(f"파일을 읽는 중 오류가 발생했습니다: {e}")
+        return pd.DataFrame()
     
-    # [핵심] 혹시 모를 잔여 공백까지 완벽 제거 (안전장치)
-    df.columns = df.columns.str.replace(' ', '').str.strip()
+    # [핵심] 컬럼명 공백 완벽 제거 (형님이 수정한 파일에 맞춤)
+    # " 총청구계량기수 " -> "총청구계량기수"
+    df.columns = df.columns.astype(str).str.replace(' ', '').str.strip()
     
-    # 2. 숫자 변환 (쉼표 제거 -> 숫자형)
-    # 형님이 수정한 컬럼명 기준: 총청구계량기수, 가스레인지연결전수
+    # 3. 숫자 변환 (쉼표 제거 -> 숫자형)
+    # 형님 엑셀 파일 컬럼명 기준 (띄어쓰기 없음)
     target_cols = ['총청구계량기수', '가스레인지연결전수', '사용량(m3)']
     
     for col in target_cols:
@@ -38,18 +49,19 @@ def load_data(file):
             df[col] = df[col].astype(str).str.replace(',', '')
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
     
-    # 3. 날짜 변환
+    # 4. 날짜 변환 (YYYYMM -> DateTime)
     if '년월' in df.columns:
         df['년월'] = df['년월'].astype(str).str.strip()
+        # 혹시 엑셀이라 .0이 붙는 경우 방지 (201501.0 -> 201501)
+        df['년월'] = df['년월'].str.replace(r'\.0$', '', regex=True)
         df['Date'] = pd.to_datetime(df['년월'], format='%Y%m', errors='coerce')
         df = df.dropna(subset=['Date'])
     
-    # 4. 파생 변수 생성 (공백 없는 이름 사용)
+    # 5. 파생 변수 생성
     if '총청구계량기수' in df.columns and '가스레인지연결전수' in df.columns:
-        # 인덕션 추정 = 총청구 - 가스레인지
         df['인덕션_추정_수'] = df['총청구계량기수'] - df['가스레인지연결전수']
         
-        # 전환율 계산 (분모 0 방지)
+        # 전환율 계산
         df['인덕션_전환율'] = df.apply(
             lambda x: (x['인덕션_추정_수'] / x['총청구계량기수'] * 100) 
             if x['총청구계량기수'] > 0 else 0, 
@@ -57,7 +69,6 @@ def load_data(file):
         )
     
     if '사용량(m3)' in df.columns and '가스레인지연결전수' in df.columns:
-        # 세대당 사용량 (PPH)
         df['세대당_사용량'] = df.apply(
             lambda x: (x['사용량(m3)'] / x['가스레인지연결전수']) 
             if x['가스레인지연결전수'] > 0 else 0,
@@ -70,15 +81,24 @@ def load_data(file):
 # 3. 메인 대시보드 로직
 # ---------------------------------------------------------
 st.sidebar.header("📂 데이터 업로드")
-uploaded_file = st.sidebar.file_uploader("CSV 파일을 업로드해주세요", type=['csv'])
+
+# 엑셀(xlsx)도 허용하도록 수정함!
+uploaded_file = st.sidebar.file_uploader("엑셀(.xlsx) 또는 CSV 파일을 업로드해주세요", type=['csv', 'xlsx', 'xls'])
 
 if uploaded_file is not None:
     df_raw = load_data(uploaded_file)
     
-    # 필수 컬럼 체크 (공백 없는 버전)
+    # 데이터가 비어있으면 중단
+    if df_raw.empty:
+        st.stop()
+
+    # 필수 컬럼 체크
     required = ['Date', '시군구', '용도', '총청구계량기수', '가스레인지연결전수']
-    if not all(col in df_raw.columns for col in required):
-        st.error(f"필수 컬럼이 없습니다. 현재 컬럼: {list(df_raw.columns)}")
+    missing = [col for col in required if col not in df_raw.columns]
+    
+    if missing:
+        st.error(f"다음 필수 컬럼이 파일에 없습니다: {missing}")
+        st.write("현재 파일의 컬럼 목록:", list(df_raw.columns))
         st.stop()
 
     # --- 필터링 ---
@@ -107,6 +127,7 @@ if uploaded_file is not None:
     # [Tab 1] 추세 분석
     with tab1:
         st.subheader("가스레인지 잔존 vs 인덕션 이탈 추이")
+        # 월별 합계
         df_m = df.groupby('Date')[['총청구계량기수', '가스레인지연결전수', '인덕션_추정_수']].sum().reset_index()
         df_m['전환율'] = (df_m['인덕션_추정_수'] / df_m['총청구계량기수']) * 100
         
@@ -149,4 +170,4 @@ if uploaded_file is not None:
         st.plotly_chart(fig4, use_container_width=True)
 
 else:
-    st.info("👈 수정하신 CSV 파일을 업로드해주세요! (띄어쓰기 없는 버전)")
+    st.info("👈 엑셀(.xlsx) 파일을 업로드해주세요! 이제 잘 될 겁니다!")
