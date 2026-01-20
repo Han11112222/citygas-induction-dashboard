@@ -16,7 +16,7 @@ st.set_page_config(
 # ---------------------------------------------------------
 # 2. 데이터 로드 및 유틸리티
 # ---------------------------------------------------------
-@st.cache_data(ttl=60) # 1분마다 캐시 초기화 (데이터 갱신 확인용)
+@st.cache_data(ttl=60)
 def load_data_from_github(url):
     try:
         df = pd.read_excel(url, engine='openpyxl')
@@ -49,36 +49,36 @@ def load_data_from_github(url):
 @st.cache_data(ttl=60)
 def load_sales_data(url):
     """
-    [핵심 수정] 가정용 판매량 데이터 로드
-    1. sheet_name='실적_부피' 강제 지정
-    2. '취사용', '개별난방용', '중앙난방용', '자가열전용' 4개 컬럼을 찾아 직접 합산
+    [가정용 판매량 데이터 로드]
+    - '실적_부피' 시트 사용
+    - ['취사용', '개별난방용', '중앙난방용', '자가열전용'] 4개 항목 합산
     """
     try:
         # 1. '실적_부피' 시트 로드
         df = pd.read_excel(url, engine='openpyxl', sheet_name='실적_부피')
         
-        # 2. 컬럼명 공백 제거 (취 사 용 -> 취사용)
+        # 2. 컬럼명 공백 제거
         df.columns = df.columns.astype(str).str.replace(' ', '').str.strip()
         
         # 3. 날짜 컬럼 생성
         if '연' in df.columns and '월' in df.columns:
              df['Date'] = pd.to_datetime(df['연'].astype(str) + df['월'].astype(str).str.zfill(2) + '01')
         
-        # 4. 합산할 4개 항목 정의 (가정용 구성요소)
+        # 4. 합산할 4개 항목 정의
         target_cols = ['취사용', '개별난방용', '중앙난방용', '자가열전용']
         
-        # 5. 각 컬럼 숫자 변환 (쉼표 제거 및 에러 방지)
+        # 5. 숫자 변환 (쉼표 제거)
         for col in target_cols:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.replace(',', '')
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             else:
-                df[col] = 0 # 컬럼이 없으면 0으로 처리
+                df[col] = 0
         
-        # 6. [핵심] 4개 항목 직접 합산 -> '가정용_판매량_전체'
+        # 6. 합산 (가정용 소계 재계산)
         df['가정용_판매량_전체'] = df[target_cols].sum(axis=1)
         
-        return df[['Date', '가정용_판매량_전체', '취사용', '개별난방용', '중앙난방용', '자가열전용']] # 검증용으로 상세 컬럼도 반환
+        return df[['Date', '가정용_판매량_전체']]
              
     except Exception as e:
         # st.error(f"⚠️ 판매량 데이터 로드 실패: {e}") 
@@ -89,8 +89,8 @@ def convert_df(df):
     return df.to_csv(index=False).encode('utf-8-sig')
 
 # --- [디자인] 컬러 팔레트 ---
-COLOR_GAS = '#1f77b4'       # 진한 파랑 (가스레인지 / 실제 판매량)
-COLOR_INDUCTION = '#a4c2f4' # 연한 하늘색 (인덕션 / 손실 추정량)
+COLOR_GAS = '#1f77b4'       # 진한 파랑 (가스레인지 / 실제 판매량) - 바닥
+COLOR_INDUCTION = '#a4c2f4' # 연한 하늘색 (인덕션 / 손실 추정량) - 위
 COLOR_LINE = '#d62728'      # 빨강 (비율/전환율/손실율)
 
 # ---------------------------------------------------------
@@ -103,7 +103,6 @@ df_raw = load_data_from_github(gas_url)
 df_sales_raw = load_sales_data(sales_url)
 
 if df_raw.empty:
-    st.error("기본 데이터(가스레인지)를 불러오지 못했습니다.")
     st.stop()
 
 # 대제목
@@ -125,18 +124,11 @@ with st.sidebar:
     regions = st.multiselect("지역 선택", sorted(df_raw['시군구'].unique()), default=sorted(df_raw['시군구'].unique()))
     types = st.multiselect("용도 선택", sorted(df_raw['용도'].unique()), default=sorted(df_raw['용도'].unique()))
     
-    # [데이터 검증용] 판매량 데이터 확인창 (형님이 숫자 맞는지 확인할 수 있게!)
-    st.markdown("---")
-    with st.expander("📊 판매량 데이터 검증 (최근 5개월)"):
-        if not df_sales_raw.empty:
-            st.success("✅ 판매량 파일 로드됨")
-            # 최근 데이터 확인
-            check_df = df_sales_raw.sort_values('Date', ascending=False).head(5)
-            check_df['Date'] = check_df['Date'].dt.strftime('%Y-%m')
-            st.dataframe(check_df[['Date', '가정용_판매량_전체']], hide_index=True)
-            st.caption("※ 위 수치가 '실적_부피' 합계와 같은지 확인해주세요.")
-        else:
-            st.error("❌ 판매량 파일 로드 실패 (URL 확인 필요)")
+    # 데이터 로드 확인용
+    if not df_sales_raw.empty:
+        st.success("판매량 데이터 연동 완료 ✅")
+    else:
+        st.warning("판매량 데이터 로드 실패 (기본값 사용)")
 
 # 전역 필터 적용
 df = df_raw[
@@ -215,21 +207,17 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     # ---------------------------------------
     
     # 연도별 세대수 집계
-    df_year = df.groupby('Year')[['총청구계량기수', '가스레인지연결전수', '인덕션_추정_수']].sum().reset_index()
+    df_year = df.groupby('Year')[['총청구계량기수', '가스레인지연결전수', '인덕션_추정_수', '사용량(m3)']].sum().reset_index()
     df_year['전환율'] = (df_year['인덕션_추정_수'] / df_year['총청구계량기수']) * 100
     
-    # [핵심 로직 수정] 실제 판매량 데이터 병합
-    actual_sales_col = '가정용_판매량_전체' # 기본값
-    
+    # 실제 판매량 병합 (취사+개별+중앙+자가열)
+    actual_sales_col = '가정용_판매량_전체'
     if not df_sales.empty:
         df_sales['Year'] = df_sales['Date'].dt.year
-        # 연도별 합계 (가정용 전체)
         df_sales_year = df_sales.groupby('Year')['가정용_판매량_전체'].sum().reset_index()
-        # 병합 (Left Join)
         df_year = pd.merge(df_year, df_sales_year, on='Year', how='left')
     else:
-        # [수정] 파일 로드 실패시 0으로 처리 (기존 데이터 대타 사용 금지)
-        df_year['가정용_판매량_전체'] = 0 
+        df_year[actual_sales_col] = 0
 
     # 손실량 계산
     df['월별손실추정'] = df['인덕션_추정_수'] * input_pph
@@ -237,13 +225,13 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     df_year = pd.merge(df_year, df_loss_year, on='Year')
     
     # 손실 점유율(%) 계산
-    df_year['잠재총사용량'] = df_year['가정용_판매량_전체'].fillna(0) + df_year['월별손실추정']
+    df_year['잠재총사용량'] = df_year[actual_sales_col].fillna(0) + df_year['월별손실추정']
     df_year['손실점유율'] = df_year.apply(
         lambda x: (x['월별손실추정'] / x['잠재총사용량'] * 100) if x['잠재총사용량'] > 0 else 0, 
         axis=1
     )
     
-    # 2017년 이후 데이터만 필터링 (판매량 데이터가 2017부터 존재하므로)
+    # 2017년 이후만 필터링 (판매량 데이터 기준)
     df_year_filtered = df_year[df_year['Year'] >= 2017].copy()
     
     col1, col2 = st.columns(2)
@@ -251,6 +239,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     # (좌) 연도별 수량 + 비율
     with col1:
         fig_q = make_subplots(specs=[[{"secondary_y": True}]])
+        # 순서 중요: 바닥(가스레인지) -> 위(인덕션)
         fig_q.add_trace(go.Bar(x=df_year['Year'], y=df_year['가스레인지연결전수'], name='가스레인지(누적)', marker_color=COLOR_GAS), secondary_y=False)
         fig_q.add_trace(go.Bar(x=df_year['Year'], y=df_year['인덕션_추정_수'], name='인덕션(누적)', marker_color=COLOR_INDUCTION), secondary_y=False)
         fig_q.add_trace(go.Scatter(x=df_year['Year'], y=df_year['전환율'], name='전환율(%)', mode='lines+markers+text', 
@@ -265,9 +254,20 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     with col2:
         fig_u = make_subplots(specs=[[{"secondary_y": True}]])
         
-        # [수정] 무조건 '가정용_판매량_전체' 컬럼 사용
-        fig_u.add_trace(go.Bar(x=df_year_filtered['Year'], y=df_year_filtered['가정용_판매량_전체'], name='실제 판매량(가정용 합계)', marker_color=COLOR_GAS), secondary_y=False)
-        fig_u.add_trace(go.Bar(x=df_year_filtered['Year'], y=df_year_filtered['월별손실추정'], name='손실 추정량(이탈분)', marker_color=COLOR_INDUCTION), secondary_y=False)
+        # [핵심 수정] 순서: 실제 판매량(바닥/진한색) -> 손실 추정량(위/연한색)
+        fig_u.add_trace(go.Bar(
+            x=df_year_filtered['Year'], 
+            y=df_year_filtered[actual_sales_col], 
+            name='실제 판매량(가정용 합계)', 
+            marker_color=COLOR_GAS  # 진한 파랑
+        ), secondary_y=False)
+        
+        fig_u.add_trace(go.Bar(
+            x=df_year_filtered['Year'], 
+            y=df_year_filtered['월별손실추정'], 
+            name='손실 추정량(이탈분)', 
+            marker_color=COLOR_INDUCTION # 연한 하늘색
+        ), secondary_y=False)
         
         fig_u.add_trace(go.Scatter(
             x=df_year_filtered['Year'], y=df_year_filtered['손실점유율'],
@@ -327,15 +327,14 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     
     df_r_sub = df[df['시군구'] == sel_region].copy()
     
-    # 손실량 계산 (월별 합산) -> 인덕션 추정 수 * PPH
+    # 손실량 계산 (월별 합산)
     df_r_sub['월별손실추정'] = df_r_sub['인덕션_추정_수'] * input_pph
     
-    # [수정] 상세분석에서는 판매량 데이터가 없으므로 '사용량(m3)' 제거하고 인덕션 추이만 보여주거나
-    # 전체 비율만 보여주는 것으로 변경해야 오해가 없음. 여기서는 기존 로직(기존 데이터 사용) 유지하되 주석 처리
-    # 왜냐하면 '판매량' 파일에는 '구군' 정보가 없기 때문입니다.
-    
-    df_r = df_r_sub.groupby('Year')[['총청구계량기수', '가스레인지연결전수', '인덕션_추정_수', '월별손실추정']].sum().reset_index()
+    df_r = df_r_sub.groupby('Year')[['총청구계량기수', '가스레인지연결전수', '인덕션_추정_수', '사용량(m3)', '월별손실추정']].sum().reset_index()
     df_r['전환율'] = (df_r['인덕션_추정_수'] / df_r['총청구계량기수']) * 100
+    
+    # [주의] 지역별 데이터는 판매량 파일에 구분이 없어서, 기존 데이터 사용 (없으면 표시 안함)
+    # 여기서는 손실 추정량 추이만 보여주는 것이 안전함
     
     c5, c6 = st.columns(2)
     
@@ -350,11 +349,18 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
         st.plotly_chart(fig_r1, use_container_width=True)
     
     with c6:
-        # 지역별 실제 판매량 데이터가 없으므로 손실 추정량만 보여줍니다.
+        # [수정] 판매량 데이터가 지역별로 없으므로, 손실 추정량(이탈분)만 시각화 (단독 막대)
         fig_r2 = go.Figure()
-        fig_r2.add_trace(go.Bar(x=df_r['Year'], y=df_r['월별손실추정'], name='손실 추정량', marker_color=COLOR_INDUCTION))
+        fig_r2.add_trace(go.Bar(
+            x=df_r['Year'], 
+            y=df_r['월별손실추정'], 
+            name='손실 추정량(이탈분)', 
+            marker_color=COLOR_INDUCTION,
+            text=df_r['월별손실추정'].apply(lambda x: f"{x:,.0f}"),
+            textposition='auto'
+        ))
         
-        fig_r2.update_layout(title=f"[{sel_region}] 연도별 손실 추정량 (실제 판매량 데이터 없음)", legend=dict(orientation="h", y=-0.2))
+        fig_r2.update_layout(title=f"[{sel_region}] 연도별 손실 추정량 추이 (판매량 데이터 없음)", legend=dict(orientation="h", y=-0.2))
         st.plotly_chart(fig_r2, use_container_width=True)
 
     st.dataframe(df_r.style.format("{:,.0f}"), use_container_width=True)
