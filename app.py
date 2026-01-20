@@ -49,17 +49,18 @@ def load_data_from_github(url):
 @st.cache_data
 def load_sales_data(url):
     """
-    [가정용 판매량 데이터 로드]
-    - '실적_부피' 시트의 '소 계' 컬럼 사용
+    [수정됨] 가정용 판매량(소계) 데이터 로드 함수
+    - '실적_부피' 시트 지정 (필수)
+    - '소 계' -> '소계' 공백 제거 후 매핑
     """
     try:
-        # sheet_name='실적_부피' 명시
+        # [핵심 수정] sheet_name='실적_부피'를 명시하여 정확한 데이터 로드
         df = pd.read_excel(url, engine='openpyxl', sheet_name='실적_부피')
         
         # 컬럼명 공백 제거 ('소 계' -> '소계')
         df.columns = df.columns.astype(str).str.replace(' ', '').str.strip()
         
-        # '소계' 컬럼 확인
+        # '소계' 컬럼(가정용 합계) 확인
         if '연' in df.columns and '월' in df.columns and '소계' in df.columns:
              # 날짜 컬럼 생성
              df['Date'] = pd.to_datetime(df['연'].astype(str) + df['월'].astype(str).str.zfill(2) + '01')
@@ -73,6 +74,7 @@ def load_sales_data(url):
              return pd.DataFrame()
              
     except Exception as e:
+        # st.warning(f"⚠️ 판매량 데이터 로드 중 문제 발생: {e}")
         return pd.DataFrame()
 
 @st.cache_data
@@ -200,15 +202,17 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     df_year = df.groupby('Year')[['총청구계량기수', '가스레인지연결전수', '인덕션_추정_수', '사용량(m3)']].sum().reset_index()
     df_year['전환율'] = (df_year['인덕션_추정_수'] / df_year['총청구계량기수']) * 100
     
-    # [데이터 병합] 실제 판매량(가정용 소계) 데이터 병합
+    # [수정] 실제 판매량(가정용 소계) 데이터 병합
     if not df_sales.empty:
         df_sales['Year'] = df_sales['Date'].dt.year
-        # 연도별 합계
+        # 연도별 합계 (가정용 전체)
         df_sales_year = df_sales.groupby('Year')['가정용_판매량_전체'].sum().reset_index()
-        # 병합
+        
+        # 기존 df_year에 병합 (Left Join)
         df_year = pd.merge(df_year, df_sales_year, on='Year', how='left')
         actual_sales_col = '가정용_판매량_전체'
     else:
+        # 파일 로드 실패시 기존 컬럼 사용
         actual_sales_col = '사용량(m3)' 
 
     # 손실량 계산
@@ -217,6 +221,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     df_year = pd.merge(df_year, df_loss_year, on='Year')
     
     # 손실 점유율(%) 계산
+    # 잠재총사용량 = 실제 판매량 + 손실추정량
     df_year['잠재총사용량'] = df_year[actual_sales_col].fillna(0) + df_year['월별손실추정']
     df_year['손실점유율'] = df_year.apply(
         lambda x: (x['월별손실추정'] / x['잠재총사용량'] * 100) if x['잠재총사용량'] > 0 else 0, 
