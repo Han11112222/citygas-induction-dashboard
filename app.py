@@ -8,7 +8,7 @@ from plotly.subplots import make_subplots
 # 1. 페이지 설정
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="인덕션 전환 추세 및 분석", # 페이지 탭 이름 수정
+    page_title="인덕션 전환 추세 분석", # 탭 이름도 통일감 있게 수정
     page_icon="🔥",
     layout="wide"
 )
@@ -64,8 +64,8 @@ df_raw = load_data_from_github(github_url)
 if df_raw.empty:
     st.stop()
 
-# [수정] 최상단 메인 타이틀 추가
-st.title("인덕션 전환 추세 및 분석")
+# [수정] 대제목 변경 (아이콘 추가 및 텍스트 수정)
+st.title("🔥 인덕션 전환 추세 분석")
 
 with st.sidebar:
     st.header("🔥 분석 메뉴")
@@ -112,7 +112,14 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     fig.add_trace(go.Scatter(x=df_m['Date'], y=df_m['가스레인지연결전수'], name='가스레인지', stackgroup='one', line=dict(color=COLOR_GAS)))
     fig.add_trace(go.Scatter(x=df_m['Date'], y=df_m['인덕션_추정_수'], name='인덕션(추정)', stackgroup='one', line=dict(color=COLOR_INDUCTION)))
     fig.add_trace(go.Scatter(x=df_m['Date'], y=df_m['전환율'], name='전환율(%)', yaxis='y2', mode='lines+markers', line=dict(color=COLOR_LINE)))
-    fig.update_layout(yaxis2=dict(overlaying='y', side='right'), hovermode="x unified", legend=dict(orientation="h", y=1.1))
+    
+    # [수정] 그래프 높이(height)를 600으로 설정하여 세로 길이 약 30% 확대
+    fig.update_layout(
+        yaxis2=dict(overlaying='y', side='right'), 
+        hovermode="x unified", 
+        legend=dict(orientation="h", y=1.1),
+        height=600 
+    )
     st.plotly_chart(fig, use_container_width=True)
     
     st.dataframe(df_m.style.format({'전환율': '{:.2f}%', '총청구계량기수': '{:,.0f}'}), use_container_width=True)
@@ -123,7 +130,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     # [2] 연도별 수량 및 손실량
     st.subheader("2️⃣ 연도별 수량 및 손실 추정량 분석")
     
-    # --- [UI 수정] PPH 용어 변경 및 추정 근거 설명 추가 ---
+    # --- PPH 용어 변경 및 추정 근거 설명 ---
     pph_col1, pph_col2 = st.columns([3, 1])
     
     with pph_col1:
@@ -187,7 +194,6 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
             line=dict(color=COLOR_LINE, width=3)
         ), secondary_y=True)
         
-        # [수정] 그래프 제목 용어 통일
         fig_u.update_layout(title=f"실제 판매량 vs 손실 추정량 (세대당 {input_pph}m³ 기준)", barmode='stack', legend=dict(orientation="h", y=-0.2))
         fig_u.update_yaxes(title_text="사용량(m³)", secondary_y=False)
         fig_u.update_yaxes(title_text="손실 비중(%)", secondary_y=True, range=[0, df_year['손실점유율'].max()*1.5])
