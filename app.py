@@ -17,7 +17,7 @@ st.set_page_config(
 # 2. 데이터 로드 및 유틸리티
 # ---------------------------------------------------------
 @st.cache_data(ttl=60)
-def load_data_final_v2(url): # 함수명 변경으로 캐시 갱신
+def load_data_final_v5(url): # v5: 캐시 강제 갱신
     try:
         df = pd.read_excel(url, engine='openpyxl')
     except Exception as e:
@@ -48,11 +48,11 @@ def load_data_final_v2(url): # 함수명 변경으로 캐시 갱신
     return df
 
 @st.cache_data(ttl=60)
-def load_sales_data_final_v2(): # 함수명 변경으로 캐시 갱신
+def load_sales_data_final_v5(): # v5: 캐시 강제 갱신
     """
-    [판매량 데이터 로드]
-    1. '실적_부피' 시트 사용
-    2. 단위 보정: 천m³ -> m³ (* 1000)
+    [단위 보정 최종]
+    - 원본 데이터: 천m³
+    - 변환: * 1000 -> m³ (손실량과 단위 통일)
     """
     url = "https://raw.githubusercontent.com/Han11112222/citygas-induction-dashboard/main/%ED%8C%90%EB%A7%A4%EB%9F%89(%EA%B3%84%ED%9A%8D_%EC%8B%A4%EC%A0%81).xlsx"
     
@@ -69,6 +69,7 @@ def load_sales_data_final_v2(): # 함수명 변경으로 캐시 갱신
         other_cols = ['일반용', '업무난방용', '냉방용', '산업용', '수송용(CNG)', '수송용(BIO)', '열병합용', '연료전지용', '열전용설비용', '주한미군']
         all_cols = household_cols + other_cols
         
+        # 숫자 변환
         for col in all_cols:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.replace(',', '')
@@ -76,7 +77,7 @@ def load_sales_data_final_v2(): # 함수명 변경으로 캐시 갱신
             else:
                 df[col] = 0
         
-        # [단위 보정] 천m³ -> m³ (x 1000)
+        # [단위 보정] 천m³ -> m³ (무조건 * 1000)
         df['가정용_판매량_전체'] = df[household_cols].sum(axis=1) * 1000
         df['기타_판매량_전체'] = df[other_cols].sum(axis=1) * 1000
         df['전체_판매량'] = df['가정용_판매량_전체'] + df['기타_판매량_전체']
@@ -100,24 +101,24 @@ COLOR_LINE = '#d62728'      # 빨강 (비율)
 # ---------------------------------------------------------
 gas_url = "https://raw.githubusercontent.com/Han11112222/citygas-induction-dashboard/main/(ver4)%EA%B0%80%EC%A0%95%EC%9A%A9_%EA%B0%80%EC%8A%A4%EB%A0%88%EC%9D%B8%EC%A7%80_%EC%82%AC%EC%9A%A9%EC%9C%A0%EB%AC%B4(201501_202412).xlsx"
 
-df_raw = load_data_final_v2(gas_url)
-df_sales_raw = load_sales_data_final_v2()
+df_raw = load_data_final_v5(gas_url)
+df_sales_raw = load_sales_data_final_v5()
 
 if df_raw.empty:
-    st.error("🚨 기본 데이터(가스레인지) 로드 실패. URL을 확인해주세요.")
+    st.error("🚨 기본 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
     st.stop()
 
 # 대제목
 st.title("🔥 인덕션 전환 추세 분석")
 
-# [데이터 로드 확인]
+# [데이터 로드 확인창]
 if not df_sales_raw.empty:
     with st.expander("✅ 판매량 데이터 로드 확인 (단위: m³로 변환됨)"):
-        st.write("아래는 **천m³ 단위에 1,000을 곱하여 m³로 변환된** 결과입니다.")
+        st.write("아래 수치는 **천m³ 단위에 1,000을 곱하여 m³로 변환된** 결과입니다.")
         check_df = df_sales_raw[df_sales_raw['Year'] >= 2024].sort_values('Date', ascending=False).head(5)
         st.dataframe(check_df, use_container_width=True)
 else:
-    st.warning("⚠️ 판매량 데이터를 불러오는 중이거나 실패했습니다.")
+    st.warning("⚠️ 판매량 데이터를 불러오는 중입니다.")
 
 with st.sidebar:
     st.header("🔥 분석 메뉴")
@@ -129,7 +130,7 @@ with st.sidebar:
     st.markdown("---")
     st.header("🔍 데이터 필터")
     
-    # [형님 요청] PPH 입력 버튼
+    # [형님 요청] PPH 입력 (사이드바)
     input_pph = st.number_input(
         "적용할 세대당 월평균 가스 사용량 (m³)", 
         min_value=0.0, 
@@ -137,7 +138,7 @@ with st.sidebar:
         value=10.0, 
         step=0.5
     )
-    st.caption("※ PPH 변경 시 손실 추정량(연한 파란색)과 비중(빨간 선)이 변경됩니다.")
+    st.caption("※ PPH 변경 시 그래프의 연한 하늘색 막대(손실량)와 빨간 선(비중)이 변합니다.")
     
     st.divider()
     
@@ -199,7 +200,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
 
     st.divider()
 
-    # [2] 연도별 수량 및 손실량 (판매량 비교) - [형님 지시] 원래대로 복구
+    # [2] 연도별 수량 및 손실량 (판매량 비교)
     st.subheader("2️⃣ 연도별 수량 및 손실 추정량 분석")
     
     # 1. 집계
@@ -218,7 +219,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
         df_year['가정용_판매량_전체'] = 0
         df_year['전체_판매량'] = 0
 
-    # 3. 손실량 계산 (m³)
+    # 3. 손실량 계산 (m³) - [핵심] * 1000 안함! (m³ 그대로)
     df['월별손실추정'] = df['인덕션_추정_수'] * input_pph
     df_loss_year = df.groupby('Year')['월별손실추정'].sum().reset_index()
     df_loss_year['Year'] = df_loss_year['Year'].astype(int)
@@ -238,7 +239,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     max_delta_year = df_year_filtered.loc[df_year_filtered['delta'].idxmax(), 'Year'] if not df_year_filtered.empty else None
     
     # ----------------------------------------------------
-    # 그래프 1: 세대 구성 (하이라이트 포함)
+    # 그래프 1: 세대 구성
     # ----------------------------------------------------
     st.markdown("##### 📊 연도별 세대 구성 및 전환율")
     fig_q = make_subplots(specs=[[{"secondary_y": True}]])
@@ -253,7 +254,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
                         fillcolor="yellow", opacity=0.15, layer="below", line_width=0,
                         annotation_text="🚀급증 구간", annotation_position="top left")
 
-    fig_q.update_layout(barmode='stack', legend=dict(orientation="h", y=1.1), height=500)
+    fig_q.update_layout(barmode='stack', legend=dict(orientation="h", y=1.1), height=600)
     fig_q.update_yaxes(title_text="연간 누적 세대수", secondary_y=False)
     fig_q.update_yaxes(title_text="전환율(%)", secondary_y=True, range=[0, df_year['전환율'].max()*1.2])
     st.plotly_chart(fig_q, use_container_width=True)
@@ -261,7 +262,8 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     st.divider()
 
     # ----------------------------------------------------
-    # 그래프 2 & 3: 판매량 비교 (이중축 적용 - 원래대로 복구)
+    # 그래프 2 & 3: 판매량 비교 (이중축 적용 - 원복)
+    # [형님 요청] 움직임이 보이도록 이중축 사용
     # ----------------------------------------------------
     col1, col2 = st.columns(2)
     
@@ -273,7 +275,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
         # 1축: 판매량 (진한 파랑)
         fig_u1.add_trace(go.Bar(x=df_year_filtered['Year'], y=df_year_filtered['가정용_판매량_전체'], name='가정용 판매량', marker_color=COLOR_GAS, opacity=0.7), secondary_y=False)
         
-        # 2축: 손실량 (연한 파랑)
+        # 2축: 손실량 (연한 파랑) - 스케일 달라도 변화 보이게
         fig_u1.add_trace(go.Bar(x=df_year_filtered['Year'], y=df_year_filtered['월별손실추정'], name='손실량 (우측축)', marker_color=COLOR_INDUCTION), secondary_y=True)
         
         # 2축: 비중 (빨강)
@@ -325,6 +327,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
         use_container_width=True,
         hide_index=True
     )
+    st.caption("※ 그래프는 스케일 차이를 고려하여 이중축(Dual Y-Axis)을 사용했습니다.")
     st.download_button("📥 연도별 데이터 다운로드", convert_df(df_year_filtered), "연도별_상세.csv", "text/csv")
 
     st.divider()
@@ -362,7 +365,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
 
     st.divider()
 
-    # [4] 상세분석 - [형님 지시] 우측 그래프 판매량 제거 유지
+    # [4] 상세분석: [형님 지시] 판매량 제거하고 손실량만 심플하게!
     st.subheader("4️⃣ 상세 분석: 지역(구군) 선택 ➡️ 연도별 흐름")
     sel_region = st.selectbox("🏙️ 지역(구군)을 선택하세요:", sorted(df['시군구'].unique()))
     
@@ -389,10 +392,9 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
         st.plotly_chart(fig_r1, use_container_width=True)
     
     with c6:
-        # [형님 지시] 회색(판매량) 제거된 상태 유지
+        # [형님 지시] 깔끔하게 손실량 막대만 표시 (회색 제거됨)
         fig_r2 = make_subplots(specs=[[{"secondary_y": True}]])
         
-        # 손실량 (연한 파랑)
         fig_r2.add_trace(go.Bar(
             x=df_r_filtered['Year'], 
             y=df_r_filtered['월별손실추정'], 
