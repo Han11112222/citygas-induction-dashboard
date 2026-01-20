@@ -49,29 +49,36 @@ def load_data_from_github(url):
 @st.cache_data
 def load_sales_data(url):
     """
-    [수정됨] 가정용 판매량(소계) 데이터 로드 함수
-    - '실적_부피' 시트 지정 (필수)
-    - '소 계' -> '소계' 공백 제거 후 매핑
+    [수정됨] 가정용 판매량 데이터 로드 함수
+    - '실적_부피' 시트 지정
+    - '취사용', '개별난방용', '중앙난방용', '자가열전용' 4개 항목 합산
     """
     try:
-        # [핵심 수정] sheet_name='실적_부피'를 명시하여 정확한 데이터 로드
+        # 1. '실적_부피' 시트 로드
         df = pd.read_excel(url, engine='openpyxl', sheet_name='실적_부피')
         
-        # 컬럼명 공백 제거 ('소 계' -> '소계')
+        # 2. 컬럼 공백 제거 (예: '소 계' -> '소계', '취 사 용' -> '취사용')
         df.columns = df.columns.astype(str).str.replace(' ', '').str.strip()
         
-        # '소계' 컬럼(가정용 합계) 확인
-        if '연' in df.columns and '월' in df.columns and '소계' in df.columns:
-             # 날짜 컬럼 생성
+        # 3. 날짜 컬럼 생성
+        if '연' in df.columns and '월' in df.columns:
              df['Date'] = pd.to_datetime(df['연'].astype(str) + df['월'].astype(str).str.zfill(2) + '01')
-             
-             # 데이터 정제 (쉼표 제거 및 숫자 변환)
-             df['소계'] = df['소계'].astype(str).str.replace(',', '')
-             df['가정용_판매량_전체'] = pd.to_numeric(df['소계'], errors='coerce').fillna(0)
-             
-             return df[['Date', '가정용_판매량_전체']]
-        else:
-             return pd.DataFrame()
+        
+        # 4. 합산할 4개 항목 정의
+        target_cols = ['취사용', '개별난방용', '중앙난방용', '자가열전용']
+        
+        # 5. 각 컬럼 숫자 변환 (쉼표 제거 후 numeric)
+        for col in target_cols:
+            if col in df.columns:
+                df[col] = df[col].astype(str).str.replace(',', '')
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            else:
+                df[col] = 0 # 컬럼이 없으면 0 처리
+        
+        # 6. [핵심] 4개 항목 직접 합산하여 '가정용_판매량_전체' 생성
+        df['가정용_판매량_전체'] = df[target_cols].sum(axis=1)
+        
+        return df[['Date', '가정용_판매량_전체']]
              
     except Exception as e:
         # st.warning(f"⚠️ 판매량 데이터 로드 중 문제 발생: {e}")
@@ -202,13 +209,12 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     df_year = df.groupby('Year')[['총청구계량기수', '가스레인지연결전수', '인덕션_추정_수', '사용량(m3)']].sum().reset_index()
     df_year['전환율'] = (df_year['인덕션_추정_수'] / df_year['총청구계량기수']) * 100
     
-    # [수정] 실제 판매량(가정용 소계) 데이터 병합
+    # [데이터 병합] 실제 판매량(직접 합산한 값) 병합
     if not df_sales.empty:
         df_sales['Year'] = df_sales['Date'].dt.year
-        # 연도별 합계 (가정용 전체)
+        # 연도별 합계 [취사용+개별+중앙+자가열 합계]
         df_sales_year = df_sales.groupby('Year')['가정용_판매량_전체'].sum().reset_index()
-        
-        # 기존 df_year에 병합 (Left Join)
+        # 병합 (Left Join)
         df_year = pd.merge(df_year, df_sales_year, on='Year', how='left')
         actual_sales_col = '가정용_판매량_전체'
     else:
@@ -228,7 +234,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
         axis=1
     )
     
-    # [수정] 2017년 이후 데이터만 필터링 (판매량 비교 그래프용)
+    # 2017년 이후 데이터만 필터링 (판매량 비교 그래프용)
     df_year_filtered = df_year[df_year['Year'] >= 2017].copy()
     
     col1, col2 = st.columns(2)
@@ -250,6 +256,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     with col2:
         fig_u = make_subplots(specs=[[{"secondary_y": True}]])
         
+        # 2017년 이후 판매량 그래프
         fig_u.add_trace(go.Bar(x=df_year_filtered['Year'], y=df_year_filtered[actual_sales_col], name='실제 판매량(가정용 합계)', marker_color=COLOR_GAS), secondary_y=False)
         fig_u.add_trace(go.Bar(x=df_year_filtered['Year'], y=df_year_filtered['월별손실추정'], name='손실 추정량(이탈분)', marker_color=COLOR_INDUCTION), secondary_y=False)
         
@@ -318,7 +325,8 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     df_r = df_r_sub.groupby('Year')[['총청구계량기수', '가스레인지연결전수', '인덕션_추정_수', '사용량(m3)', '월별손실추정']].sum().reset_index()
     df_r['전환율'] = (df_r['인덕션_추정_수'] / df_r['총청구계량기수']) * 100
     
-    # [주의] 지역별 실제 판매량은 새 엑셀파일에 지역 구분이 없으므로, 기존 가스레인지 파일에 있던 '사용량(m3)'을 사용합니다.
+    # [주의] 상세분석의 '실제 판매량'은 여전히 기존 파일(지역 구분 있음) 데이터를 사용합니다.
+    # 새로 올린 파일에는 지역 정보가 없기 때문입니다.
     df_r['잠재총사용량'] = df_r['사용량(m3)'] + df_r['월별손실추정']
     df_r['손실점유율'] = df_r.apply(
         lambda x: (x['월별손실추정'] / x['잠재총사용량'] * 100) if x['잠재총사용량'] > 0 else 0,
