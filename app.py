@@ -24,7 +24,6 @@ def load_data_from_github(url):
         st.error(f"⚠️ 가스레인지 데이터를 불러오지 못했습니다. 에러: {e}")
         return pd.DataFrame()
 
-    # 컬럼 공백 제거 (소 계 -> 소계)
     df.columns = df.columns.astype(str).str.replace(' ', '').str.strip()
     
     target_cols = ['총청구계량기수', '가스레인지연결전수', '사용량(m3)']
@@ -51,17 +50,17 @@ def load_data_from_github(url):
 def load_sales_data(url):
     """
     [수정됨] 가정용 판매량(소계) 데이터 로드 함수
-    - '실적_부피' 시트 지정
-    - '소 계' 컬럼 공백 제거 처리
+    - '실적_부피' 시트 지정 (필수)
+    - '소 계' -> '소계' 공백 제거 후 매핑
     """
     try:
-        # [핵심 수정 1] sheet_name='실적_부피' 명시하여 정확한 시트 로드
+        # [핵심 수정] sheet_name='실적_부피'를 명시하여 정확한 데이터 로드
         df = pd.read_excel(url, engine='openpyxl', sheet_name='실적_부피')
         
-        # [핵심 수정 2] 컬럼명 공백 제거 ('소 계' -> '소계'로 변환)
+        # 컬럼명 공백 제거 ('소 계' -> '소계')
         df.columns = df.columns.astype(str).str.replace(' ', '').str.strip()
         
-        # 이제 '소계' 컬럼을 찾을 수 있음
+        # '소계' 컬럼(가정용 합계) 확인
         if '연' in df.columns and '월' in df.columns and '소계' in df.columns:
              # 날짜 컬럼 생성
              df['Date'] = pd.to_datetime(df['연'].astype(str) + df['월'].astype(str).str.zfill(2) + '01')
@@ -94,7 +93,7 @@ COLOR_LINE = '#d62728'      # 빨강 (비율/전환율/손실율)
 gas_url = "https://raw.githubusercontent.com/Han11112222/citygas-induction-dashboard/main/(ver4)%EA%B0%80%EC%A0%95%EC%9A%A9_%EA%B0%80%EC%8A%A4%EB%A0%88%EC%9D%B8%EC%A7%80_%EC%82%AC%EC%9A%A9%EC%9C%A0%EB%AC%B4(201501_202412).xlsx"
 df_raw = load_data_from_github(gas_url)
 
-# [신규] 가정용 판매량 데이터 로드
+# [신규] 가정용 판매량 데이터 로드 (실적_부피 시트)
 sales_url = "https://raw.githubusercontent.com/Han11112222/citygas-induction-dashboard/main/판매량(계획_실적).xlsx" 
 df_sales_raw = load_sales_data(sales_url)
 
@@ -160,6 +159,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     fig.add_trace(go.Scatter(x=df_m['Date'], y=df_m['인덕션_추정_수'], name='인덕션(추정)', stackgroup='one', line=dict(color=COLOR_INDUCTION)))
     fig.add_trace(go.Scatter(x=df_m['Date'], y=df_m['전환율'], name='전환율(%)', yaxis='y2', mode='lines+markers', line=dict(color=COLOR_LINE)))
     
+    # 그래프 높이 확대
     fig.update_layout(
         yaxis2=dict(overlaying='y', side='right'), 
         hovermode="x unified", 
@@ -208,7 +208,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
         # 연도별 합계 (가정용 전체)
         df_sales_year = df_sales.groupby('Year')['가정용_판매량_전체'].sum().reset_index()
         
-        # 기존 df_year에 병합 (Left Join) -> 2015, 2016년은 데이터가 없으므로 NaN(또는 0)이 될 것임
+        # 기존 df_year에 병합 (Left Join)
         df_year = pd.merge(df_year, df_sales_year, on='Year', how='left')
         actual_sales_col = '가정용_판매량_전체'
     else:
@@ -221,10 +221,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     df_year = pd.merge(df_year, df_loss_year, on='Year')
     
     # 손실 점유율(%) 계산
-    # 잠재총사용량 = 실제 판매량 + 손실추정량
     df_year['잠재총사용량'] = df_year[actual_sales_col].fillna(0) + df_year['월별손실추정']
-    
-    # 0으로 나누기 방지
     df_year['손실점유율'] = df_year.apply(
         lambda x: (x['월별손실추정'] / x['잠재총사용량'] * 100) if x['잠재총사용량'] > 0 else 0, 
         axis=1
@@ -249,8 +246,6 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     with col2:
         fig_u = make_subplots(specs=[[{"secondary_y": True}]])
         
-        # [데이터 확인] 2017년부터 데이터가 있으면 2015, 2016은 0으로 표시될 수 있음.
-        # 이를 명확히 하기 위해 텍스트 추가 등을 고려할 수 있으나, 일단 그래프로 표현
         fig_u.add_trace(go.Bar(x=df_year['Year'], y=df_year[actual_sales_col], name='실제 판매량(가정용 합계)', marker_color=COLOR_GAS), secondary_y=False)
         fig_u.add_trace(go.Bar(x=df_year['Year'], y=df_year['월별손실추정'], name='손실 추정량(이탈분)', marker_color=COLOR_INDUCTION), secondary_y=False)
         
@@ -319,7 +314,6 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     df_r['전환율'] = (df_r['인덕션_추정_수'] / df_r['총청구계량기수']) * 100
     
     # [주의] 지역별 실제 판매량은 새 엑셀파일에 지역 구분이 없으므로, 기존 가스레인지 파일에 있던 '사용량(m3)'을 사용합니다.
-    # 만약 기존 파일의 '사용량(m3)'이 정확하지 않다면, 이 부분은 추후 지역별 판매량 데이터가 확보되어야 정확해집니다.
     df_r['잠재총사용량'] = df_r['사용량(m3)'] + df_r['월별손실추정']
     df_r['손실점유율'] = df_r.apply(
         lambda x: (x['월별손실추정'] / x['잠재총사용량'] * 100) if x['잠재총사용량'] > 0 else 0,
