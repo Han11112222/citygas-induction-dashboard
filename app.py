@@ -3,7 +3,6 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from pathlib import Path
 
 # ---------------------------------------------------------
 # 1. 페이지 설정
@@ -22,13 +21,8 @@ def load_data_from_github(url):
     try:
         df = pd.read_excel(url, engine='openpyxl')
     except Exception as e:
-        # 혹시 URL 로드 실패하면 로컬 파일 시도
-        try:
-             local_path = Path(__file__).parent / "(ver4)가정용_가스레인지_사용유무(201501_202412).xlsx"
-             df = pd.read_excel(local_path, engine='openpyxl')
-        except:
-             st.error(f"⚠️ 가스레인지 데이터 로드 실패: {e}")
-             return pd.DataFrame()
+        st.error(f"⚠️ 가스레인지 데이터 로드 실패: {e}")
+        return pd.DataFrame()
 
     df.columns = df.columns.astype(str).str.replace(' ', '').str.strip()
     
@@ -48,38 +42,29 @@ def load_data_from_github(url):
         df['인덕션_추정_수'] = df['총청구계량기수'] - df['가스레인지연결전수']
         df['인덕션_전환율'] = df.apply(lambda x: (x['인덕션_추정_수']/x['총청구계량기수']*100) if x['총청구계량기수']>0 else 0, axis=1)
     
-    # [강제 형변환] 연도를 무조건 정수(int)로 변환
+    # [연도 정수형 변환]
     df['Year'] = df['Date'].dt.year.astype(int)
 
     return df
 
 @st.cache_data(ttl=60)
-def load_sales_data_local():
+def load_sales_data(url):
     """
-    [로컬 파일 로드] 판매량(계획_실적).xlsx
-    - '실적_부피' 시트 사용
-    - ['취사용', '개별난방용', '중앙난방용', '자가열전용'] 4개 항목 합산
+    [형님 요청 반영] 가정용 판매량 데이터 로드
+    1. '실적_부피' 시트 사용
+    2. ['취사용', '개별난방용', '중앙난방용', '자가열전용'] 4개 항목 직접 합산
+    3. [단위 보정] 천m³ -> m³ (x 1000)
     """
-    # 1. 파일 경로 설정 (같은 폴더에 있다고 가정)
-    file_name = "판매량(계획_실적).xlsx"
-    path = Path(__file__).parent / file_name
-    
-    if not path.exists():
-        # st.warning(f"⚠️ '{file_name}' 파일이 없습니다. (URL 로드 시도)")
-        return pd.DataFrame()
-
     try:
         # 1. '실적_부피' 시트 로드
-        df = pd.read_excel(path, engine='openpyxl', sheet_name='실적_부피')
+        df = pd.read_excel(url, engine='openpyxl', sheet_name='실적_부피')
         
         # 2. 컬럼명 공백 제거
         df.columns = df.columns.astype(str).str.replace(' ', '').str.strip()
         
-        # 3. 날짜 컬럼 생성 및 연도 추출
+        # 3. 날짜 및 연도 처리
         if '연' in df.columns and '월' in df.columns:
-             # 연도를 무조건 정수(int)로 변환
              df['Year'] = pd.to_numeric(df['연'], errors='coerce').fillna(0).astype(int)
-             # 날짜 생성 (월은 2자리로 맞춤)
              df['Date'] = pd.to_datetime(df['Year'].astype(str) + df['월'].astype(str).str.zfill(2) + '01', errors='coerce')
         
         # 4. 합산할 4개 항목 정의
@@ -93,10 +78,11 @@ def load_sales_data_local():
             else:
                 df[col] = 0
         
-        # 6. 합산 (가정용 소계 재계산)
-        df['가정용_판매량_전체'] = df[target_cols].sum(axis=1)
+        # 6. [핵심] 4개 항목 직접 합산 -> '가정용_판매량_전체'
+        # 7. [단위 보정] 엑셀 데이터는 '천m³'이므로 1000을 곱해 'm³'로 변환
+        df['가정용_판매량_전체'] = df[target_cols].sum(axis=1) * 1000
         
-        # 데이터가 있는 행만 리턴
+        # 데이터 리턴
         return df[['Year', 'Date', '가정용_판매량_전체']]
              
     except Exception as e:
@@ -107,58 +93,35 @@ def load_sales_data_local():
 def convert_df(df):
     return df.to_csv(index=False).encode('utf-8-sig')
 
-# --- [디자인] 컬러 팔레트 ---
-COLOR_GAS = '#1f77b4'       # 진한 파랑 (가스레인지 / 실제 판매량) - 바닥
-COLOR_INDUCTION = '#a4c2f4' # 연한 하늘색 (인덕션 / 손실 추정량) - 위
+# --- [디자인] 컬러 팔레트 (형님 요청 반영) ---
+COLOR_GAS = '#1f77b4'       # 진한 파랑 (실제 판매량 - 바닥)
+COLOR_INDUCTION = '#a4c2f4' # 연한 하늘색 (손실 추정량 - 위)
 COLOR_LINE = '#d62728'      # 빨강 (비율/전환율/손실율)
 
 # ---------------------------------------------------------
 # 3. 데이터 로드 및 사이드바 구성
 # ---------------------------------------------------------
 gas_url = "https://raw.githubusercontent.com/Han11112222/citygas-induction-dashboard/main/(ver4)%EA%B0%80%EC%A0%95%EC%9A%A9_%EA%B0%80%EC%8A%A4%EB%A0%88%EC%9D%B8%EC%A7%80_%EC%82%AC%EC%9A%A9%EC%9C%A0%EB%AC%B4(201501_202412).xlsx"
+sales_url = "https://raw.githubusercontent.com/Han11112222/citygas-induction-dashboard/main/판매량(계획_실적).xlsx"
 
-# 1. 가스레인지 데이터 로드 (URL 시도)
 df_raw = load_data_from_github(gas_url)
-
-# 2. 판매량 데이터 로드 (로컬 파일 시도 - 형님이 올린 파일명 기준)
-df_sales_raw = load_sales_data_local()
-
-# 로컬 로드 실패 시 URL 시도 (혹시 모르니)
-if df_sales_raw.empty:
-    sales_url = "https://raw.githubusercontent.com/Han11112222/citygas-induction-dashboard/main/판매량(계획_실적).xlsx"
-    try:
-        # load_sales_data_local 로직을 URL용으로 재활용 (pd.read_excel은 URL도 받음)
-        df_sales_raw = pd.read_excel(sales_url, engine='openpyxl', sheet_name='실적_부피')
-        df_sales_raw.columns = df_sales_raw.columns.astype(str).str.replace(' ', '').str.strip()
-        df_sales_raw['Year'] = pd.to_numeric(df_sales_raw['연'], errors='coerce').fillna(0).astype(int)
-        df_sales_raw['Date'] = pd.to_datetime(df_sales_raw['Year'].astype(str) + df_sales_raw['월'].astype(str).str.zfill(2) + '01', errors='coerce')
-        target_cols = ['취사용', '개별난방용', '중앙난방용', '자가열전용']
-        for col in target_cols:
-             if col in df_sales_raw.columns:
-                 df_sales_raw[col] = pd.to_numeric(df_sales_raw[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-             else:
-                 df_sales_raw[col] = 0
-        df_sales_raw['가정용_판매량_전체'] = df_sales_raw[target_cols].sum(axis=1)
-        df_sales_raw = df_sales_raw[['Year', 'Date', '가정용_판매량_전체']]
-    except:
-        pass # URL 로드도 실패하면 빈 데이터프레임 유지
+df_sales_raw = load_sales_data(sales_url)
 
 if df_raw.empty:
-    st.error("🚨 기본 데이터(가스레인지)를 불러오지 못했습니다. 인터넷 연결이나 파일 경로를 확인해주세요.")
     st.stop()
 
 # 대제목
 st.title("🔥 인덕션 전환 추세 분석")
 
-# [디버깅용] 데이터 확인 (화면 상단에 표시하여 데이터 로드 여부 확인)
+# [데이터 로드 확인]
 if not df_sales_raw.empty:
-    with st.expander("✅ 판매량 데이터 로드 확인 (클릭하여 2024~2025년 데이터 확인)"):
-        st.write("아래 표의 '가정용_판매량_전체' 값이 형님 엑셀 파일과 일치하는지 확인해주세요.")
-        # 최근 2024~2025년 데이터만 필터링해서 보여줌
-        check_df = df_sales_raw[df_sales_raw['Year'] >= 2024].sort_values('Date', ascending=False)
+    with st.expander("✅ 판매량 데이터(실적_부피) 로드 확인 (단위: m³)"):
+        st.write("아래는 '실적_부피' 시트에서 [취사용+개별+중앙+자가열] 합계에 **1000을 곱한(m³ 환산)** 결과입니다.")
+        # 최근 2025년 데이터만 필터링해서 보여줌
+        check_df = df_sales_raw[df_sales_raw['Year'] >= 2024].sort_values('Date', ascending=False).head(5)
         st.dataframe(check_df, use_container_width=True)
 else:
-    st.error("🚨 '판매량(계획_실적).xlsx' 파일을 찾을 수 없거나 로드에 실패했습니다. 파일이 같은 폴더에 있는지 확인해주세요.")
+    st.error("🚨 판매량 데이터를 불러오지 못했습니다. Github URL을 확인해주세요.")
 
 with st.sidebar:
     st.header("🔥 분석 메뉴")
@@ -242,12 +205,12 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
         )
     # ---------------------------------------
     
-    # 1. 연도별 인덕션 수량 집계 (가스레인지 데이터)
+    # 1. 연도별 인덕션 수량 집계
     df_year = df.groupby('Year')[['총청구계량기수', '가스레인지연결전수', '인덕션_추정_수']].sum().reset_index()
     df_year['Year'] = df_year['Year'].astype(int)
     df_year['전환율'] = (df_year['인덕션_추정_수'] / df_year['총청구계량기수']) * 100
     
-    # 2. [핵심] 실제 판매량 데이터 병합
+    # 2. [핵심] 실제 판매량 데이터 병합 (단위: m³)
     actual_sales_col = '가정용_판매량_전체'
     
     if not df_sales_raw.empty:
@@ -261,7 +224,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     else:
         df_year[actual_sales_col] = 0
 
-    # 3. 손실 추정량 계산
+    # 3. 손실 추정량 계산 (단위: m³)
     df['월별손실추정'] = df['인덕션_추정_수'] * input_pph
     df_loss_year = df.groupby('Year')['월별손실추정'].sum().reset_index()
     df_loss_year['Year'] = df_loss_year['Year'].astype(int)
@@ -275,7 +238,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
         axis=1
     )
     
-    # 5. 2017년 이후 데이터만 필터링 (판매량 비교용)
+    # 5. 2017년 이후 데이터만 필터링
     df_year_filtered = df_year[df_year['Year'] >= 2017].copy()
     
     col1, col2 = st.columns(2)
@@ -293,27 +256,27 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
         fig_q.update_yaxes(title_text="전환율(%)", secondary_y=True, range=[0, df_year['전환율'].max()*1.2])
         st.plotly_chart(fig_q, use_container_width=True)
 
-    # (우) 연도별 사용량 + 손실량 (2017년부터)
+    # (우) 연도별 사용량 + 손실량 (단위 보정됨)
     with col2:
         fig_u = make_subplots(specs=[[{"secondary_y": True}]])
         
-        # 바닥: 실제 판매량 (진한 파랑)
+        # [핵심] 바닥: 실제 판매량 (진한 파랑, m³)
         fig_u.add_trace(go.Bar(
             x=df_year_filtered['Year'], 
             y=df_year_filtered[actual_sales_col], 
             name='실제 판매량(가정용 합계)', 
-            marker_color=COLOR_GAS  # 진한 파랑
+            marker_color=COLOR_GAS
         ), secondary_y=False)
         
-        # 위: 손실 추정량 (연한 하늘색)
+        # [핵심] 위: 손실 추정량 (연한 하늘색, m³)
         fig_u.add_trace(go.Bar(
             x=df_year_filtered['Year'], 
             y=df_year_filtered['월별손실추정'], 
             name='손실 추정량(이탈분)', 
-            marker_color=COLOR_INDUCTION # 연한 하늘색
+            marker_color=COLOR_INDUCTION
         ), secondary_y=False)
         
-        # 선: 손실 비중 (빨강)
+        # 선: 손실 비중
         fig_u.add_trace(go.Scatter(
             x=df_year_filtered['Year'], y=df_year_filtered['손실점유율'],
             mode='lines+markers+text',
