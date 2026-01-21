@@ -95,10 +95,9 @@ COLOR_GAS = '#1f77b4'       # 기본 파랑
 COLOR_INDUCTION = '#a4c2f4' # 연한 하늘색
 COLOR_LINE = '#d62728'      # 빨강 (비율 선)
 COLOR_LOSS_BLUE = '#115f9a' # 손실량 (딥 블루)
-COLOR_HIGHLIGHT_BG = '#a4c2f4' # 하이라이트 배경
+COLOR_HIGHLIGHT_BG = '#a4c2f4' # 하이라이트 배경 (형님 요청: 푸른 계열)
 COLOR_HIGHLIGHT_LINE = '#1f77b4' # 하이라이트 선/텍스트
-# [신규] 텍스트 색상 (연한 회색)
-COLOR_TEXT_LIGHTGREY = 'lightgrey' 
+COLOR_TEXT_LIGHTGREY = 'lightgrey' # 텍스트 색상
 
 # ---------------------------------------------------------
 # 3. 데이터 로드 및 사이드바 구성
@@ -236,19 +235,19 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     end_highlight_year = df_year_filtered['Year'].max()
 
     # ----------------------------------------------------
-    # [형님 요청] 그래프 1: 텍스트 사이즈 2배 & 연한 회색
+    # [형님 요청] 그래프 1: 텍스트 사이즈 20px (20% 축소)
     # ----------------------------------------------------
     st.markdown("##### 1. 연도별 세대 구성(12월) 및 전환율")
     fig_q = make_subplots(specs=[[{"secondary_y": True}]])
     fig_q.add_trace(go.Bar(x=df_year['Year'], y=df_year['가스레인지연결전수'], name='가스레인지(12월)', marker_color=COLOR_GAS), secondary_y=False)
     fig_q.add_trace(go.Bar(x=df_year['Year'], y=df_year['인덕션_추정_수'], name='인덕션(12월)', marker_color=COLOR_INDUCTION), secondary_y=False)
     
-    # [수정] 텍스트 폰트 사이즈 2배(24px) 및 색상(연한 회색) 적용
+    # [수정] 폰트 사이즈 24 -> 20 (약 20% 축소)
     fig_q.add_trace(go.Scatter(
         x=df_year['Year'], y=df_year['전환율'], name='전환율(%)', mode='lines+markers+text', 
         text=df_year['전환율'].apply(lambda x: f"{x:.1f}%"), 
         textposition='top center',
-        textfont=dict(size=24, color=COLOR_TEXT_LIGHTGREY), # 폰트 수정
+        textfont=dict(size=20, color=COLOR_TEXT_LIGHTGREY), 
         line=dict(color=COLOR_LINE, width=3)
     ), secondary_y=True)
     
@@ -272,7 +271,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     st.markdown("---") 
 
     # ----------------------------------------------------
-    # [형님 요청] 그래프 2: 텍스트 사이즈 2배 & 연한 회색 (막대 안)
+    # [형님 요청] 그래프 2: 텍스트 사이즈 16px (20% 축소)
     # ----------------------------------------------------
     st.markdown("##### 2. 연간 가정용 손실량 추정 및 비중")
     fig_loss = make_subplots(specs=[[{"secondary_y": True}]])
@@ -280,7 +279,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     latest_year_val = df_year_filtered['Year'].max()
     latest_loss_val = df_year_filtered[df_year_filtered['Year'] == latest_year_val]['연간손실추정_m3'].values[0] if pd.notna(latest_year_val) else 0
 
-    # 1축: 손실량 (막대) - [수정] 텍스트 폰트 수정
+    # 1축: 손실량 (막대)
     fig_loss.add_trace(go.Bar(
         x=df_year_filtered['Year'],
         y=df_year_filtered['연간손실추정_m3'],
@@ -288,8 +287,8 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
         marker_color=COLOR_LOSS_BLUE,
         text=df_year_filtered['손실점유율_가정'].apply(lambda x: f"{x:.1f}%"),
         textposition='inside',
-        # [수정] 폰트 사이즈 2배(20px) 및 색상(연한 회색) 적용
-        textfont=dict(size=20, color=COLOR_TEXT_LIGHTGREY) 
+        # [수정] 폰트 사이즈 20 -> 16 (약 20% 축소)
+        textfont=dict(size=16, color=COLOR_TEXT_LIGHTGREY) 
     ), secondary_y=False)
     
     # 최신 연도 라벨
@@ -342,6 +341,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     # ----------------------------------------------------
     col1, col2 = st.columns(2)
     
+    # (좌) 가정용 판매량 vs 손실량
     with col1:
         st.markdown("##### ① 가정용 판매량 vs 손실 추정량")
         fig_u1 = make_subplots(specs=[[{"secondary_y": True}]])
@@ -353,6 +353,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
         fig_u1.update_yaxes(title_text="손실 비중 (%)", secondary_y=True, showticklabels=False) 
         st.plotly_chart(fig_u1, use_container_width=True)
 
+    # (우) 전체 판매량 vs 손실량
     with col2:
         st.markdown("##### ② 전체 판매량 vs 손실 추정량")
         fig_u2 = make_subplots(specs=[[{"secondary_y": True}]])
@@ -364,9 +365,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
         fig_u2.update_yaxes(title_text="손실 비중 (%)", secondary_y=True, showticklabels=False)
         st.plotly_chart(fig_u2, use_container_width=True)
     
-    # ----------------------------------------------------
-    # [형님 요청] 표 하이라이트 (핵심 컬럼 세로 강조)
-    # ----------------------------------------------------
+    # [형님 요청] 표 하이라이트 (유지)
     st.dataframe(
         df_year_filtered.style
         .format({
@@ -375,7 +374,6 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
             '가정용_판매량_전체': '{:,.0f}', '전체_판매량': '{:,.0f}', '연간손실추정_m3': '{:,.0f}',
             '잠재_가정용': '{:,.0f}', '잠재_전체': '{:,.0f}'
         })
-        # [핵심 수정] 특정 컬럼(인덕션_추정_수, 전환율) 세로 하이라이트 적용
         .set_properties(
             subset=['인덕션_추정_수', '전환율'], 
             **{'background-color': '#ffffcc', 'font-weight': 'bold', 'color': 'black'}
@@ -449,7 +447,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
             x=df_r_filtered['Year'], 
             y=df_r_filtered['연간손실추정_m3'], 
             name=f'[{sel_region}] 손실 추정량', 
-            marker_color=COLOR_LOSS_BLUE, # 딥 블루
+            marker_color=COLOR_LOSS_BLUE, 
             text=df_r_filtered['연간손실추정_m3'].apply(lambda x: f"{x:,.0f}"),
             textposition='auto'
         ), secondary_y=False) 
