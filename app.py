@@ -17,7 +17,7 @@ st.set_page_config(
 # 2. 데이터 로드 및 유틸리티
 # ---------------------------------------------------------
 @st.cache_data(ttl=60)
-def load_data_final_v18(url):
+def load_data_final_v19(url):
     try:
         df = pd.read_excel(url, engine='openpyxl')
     except Exception as e:
@@ -48,7 +48,7 @@ def load_data_final_v18(url):
     return df
 
 @st.cache_data(ttl=60)
-def load_sales_data_final_v18():
+def load_sales_data_final_v19():
     """
     [판매량 데이터 로드]
     단위: 천m³ -> m³ (* 1000)
@@ -90,23 +90,23 @@ def load_sales_data_final_v18():
 def convert_df(df):
     return df.to_csv(index=False).encode('utf-8-sig')
 
-# --- [디자인] 컬러 팔레트 (푸른색 계열 통일) ---
-COLOR_GAS = '#1f77b4'       # 기본 파랑 (가스레인지/판매량)
-COLOR_INDUCTION = '#a4c2f4' # 연한 하늘색 (인덕션 수 - Stack용 대비)
-COLOR_LINE = '#d62728'      # 빨강 (비율 선 - 강조용 유지)
-COLOR_LOSS_BLUE = '#115f9a' # 손실량: 깊이감 있는 세련된 딥 블루
-# [신규] 하이라이트용 푸른색
-COLOR_HIGHLIGHT_BG = '#a4c2f4' # 배경 (연한 하늘색)
-COLOR_HIGHLIGHT_LINE = '#1f77b4' # 선/텍스트 (진한 파랑)
-
+# --- [디자인] 컬러 팔레트 ---
+COLOR_GAS = '#1f77b4'       # 기본 파랑
+COLOR_INDUCTION = '#a4c2f4' # 연한 하늘색
+COLOR_LINE = '#d62728'      # 빨강 (비율 선)
+COLOR_LOSS_BLUE = '#115f9a' # 손실량 (딥 블루)
+COLOR_HIGHLIGHT_BG = '#a4c2f4' # 하이라이트 배경
+COLOR_HIGHLIGHT_LINE = '#1f77b4' # 하이라이트 선/텍스트
+# [신규] 텍스트 색상 (연한 회색)
+COLOR_TEXT_LIGHTGREY = 'lightgrey' 
 
 # ---------------------------------------------------------
 # 3. 데이터 로드 및 사이드바 구성
 # ---------------------------------------------------------
 gas_url = "https://raw.githubusercontent.com/Han11112222/citygas-induction-dashboard/main/(ver4)%EA%B0%80%EC%A0%95%EC%9A%A9_%EA%B0%80%EC%8A%A4%EB%A0%88%EC%9D%B8%EC%A7%80_%EC%82%AC%EC%9A%A9%EC%9C%A0%EB%AC%B4(201501_202412).xlsx"
 
-df_raw = load_data_final_v18(gas_url)
-df_sales_raw = load_sales_data_final_v18()
+df_raw = load_data_final_v19(gas_url)
+df_sales_raw = load_sales_data_final_v19()
 
 if df_raw.empty:
     st.error("🚨 기본 데이터 로드 실패. 잠시 후 다시 시도해주세요.")
@@ -126,7 +126,6 @@ else:
 
 with st.sidebar:
     st.header("🔥 분석 메뉴")
-    # 단일 메뉴
     selected_menu = st.radio(
         "분석 메뉴 선택",
         ["1. 전환 추세 및 상세 분석"]
@@ -135,12 +134,11 @@ with st.sidebar:
     st.markdown("---")
     st.header("🔍 데이터 필터")
     
-    # [형님 요청] PPH 기본값 5.0으로 변경
     input_pph = st.number_input(
         "적용할 세대당 월평균 가스 사용량 (m³)", 
         min_value=0.0, 
         max_value=100.0, 
-        value=5.0,  # [수정] 기본값 10.0 -> 5.0
+        value=5.0, 
         step=0.5
     )
     st.caption("※ PPH: 난방을 제외한 순수 취사 전용 사용량")
@@ -168,7 +166,7 @@ df = df_raw[
 st.markdown(f"### 📊 {selected_menu}")
 
 # =========================================================
-# [MENU 1] 전환 추세 및 상세 분석 (단일 메뉴 운영)
+# [MENU 1] 전환 추세 및 상세 분석
 # =========================================================
 if selected_menu == "1. 전환 추세 및 상세 분석":
     
@@ -233,31 +231,35 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
 
     df_year_filtered = df_year[df_year['Year'] >= 2017].copy()
     
-    # 하이라이트 조건
     highlight_condition = df_year_filtered['전환율'] > 10.0
     start_highlight_year = df_year_filtered.loc[highlight_condition, 'Year'].min() if highlight_condition.any() else None
     end_highlight_year = df_year_filtered['Year'].max()
 
     # ----------------------------------------------------
-    # [형님 요청] 그래프 1: 세대 구성 - 하이라이트 푸른색 계열 + 멘트 수정
+    # [형님 요청] 그래프 1: 텍스트 사이즈 2배 & 연한 회색
     # ----------------------------------------------------
     st.markdown("##### 1. 연도별 세대 구성(12월) 및 전환율")
     fig_q = make_subplots(specs=[[{"secondary_y": True}]])
     fig_q.add_trace(go.Bar(x=df_year['Year'], y=df_year['가스레인지연결전수'], name='가스레인지(12월)', marker_color=COLOR_GAS), secondary_y=False)
     fig_q.add_trace(go.Bar(x=df_year['Year'], y=df_year['인덕션_추정_수'], name='인덕션(12월)', marker_color=COLOR_INDUCTION), secondary_y=False)
-    fig_q.add_trace(go.Scatter(x=df_year['Year'], y=df_year['전환율'], name='전환율(%)', mode='lines+markers+text', 
-                               text=df_year['전환율'].apply(lambda x: f"{x:.1f}%"), textposition='top center', 
-                               line=dict(color=COLOR_LINE, width=3)), secondary_y=True)
+    
+    # [수정] 텍스트 폰트 사이즈 2배(24px) 및 색상(연한 회색) 적용
+    fig_q.add_trace(go.Scatter(
+        x=df_year['Year'], y=df_year['전환율'], name='전환율(%)', mode='lines+markers+text', 
+        text=df_year['전환율'].apply(lambda x: f"{x:.1f}%"), 
+        textposition='top center',
+        textfont=dict(size=24, color=COLOR_TEXT_LIGHTGREY), # 폰트 수정
+        line=dict(color=COLOR_LINE, width=3)
+    ), secondary_y=True)
     
     if start_highlight_year:
-        # [수정] 푸른색 계열(하늘색 배경 + 진한 파랑 선) 적용
         fig_q.add_vrect(
             x0=start_highlight_year-0.5, x1=end_highlight_year+0.5, 
             fillcolor=COLOR_HIGHLIGHT_BG, opacity=0.2, layer="below", line_width=0
         )
         fig_q.add_vline(
             x=start_highlight_year-0.5, line_width=2, line_dash="dash", line_color=COLOR_HIGHLIGHT_LINE,
-            annotation_text="🚀 전환 가속화", # [수정] 멘트 간소화
+            annotation_text="🚀 전환 가속화", 
             annotation_position="top left",
             annotation_font=dict(size=14, color=COLOR_HIGHLIGHT_LINE, family="Arial Black")
         )
@@ -270,7 +272,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     st.markdown("---") 
 
     # ----------------------------------------------------
-    # [형님 요청] 그래프 2: 연간 손실 추정량 (비중 숫자 막대 안으로 이동)
+    # [형님 요청] 그래프 2: 텍스트 사이즈 2배 & 연한 회색 (막대 안)
     # ----------------------------------------------------
     st.markdown("##### 2. 연간 가정용 손실량 추정 및 비중")
     fig_loss = make_subplots(specs=[[{"secondary_y": True}]])
@@ -278,19 +280,19 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     latest_year_val = df_year_filtered['Year'].max()
     latest_loss_val = df_year_filtered[df_year_filtered['Year'] == latest_year_val]['연간손실추정_m3'].values[0] if pd.notna(latest_year_val) else 0
 
-    # 1축: 손실량 (막대) - [수정] 비중(%)을 막대 안에 표시
+    # 1축: 손실량 (막대) - [수정] 텍스트 폰트 수정
     fig_loss.add_trace(go.Bar(
         x=df_year_filtered['Year'],
         y=df_year_filtered['연간손실추정_m3'],
         name='연간 손실량(m³)',
         marker_color=COLOR_LOSS_BLUE,
-        # [핵심 수정] 비중 숫자를 막대 안에, 연한 회색으로 표시
         text=df_year_filtered['손실점유율_가정'].apply(lambda x: f"{x:.1f}%"),
         textposition='inside',
-        textfont=dict(color='lightgrey') 
+        # [수정] 폰트 사이즈 2배(20px) 및 색상(연한 회색) 적용
+        textfont=dict(size=20, color=COLOR_TEXT_LIGHTGREY) 
     ), secondary_y=False)
     
-    # 최신 연도 라벨 (상단 표시 유지)
+    # 최신 연도 라벨
     if pd.notna(latest_year_val):
         fig_loss.add_trace(go.Scatter(
             x=[latest_year_val],
@@ -303,12 +305,12 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
             hoverinfo='skip'
         ), secondary_y=False)
 
-    # 2축: 비중 (선) - [수정] 텍스트 제거 (막대 안으로 이동했으므로)
+    # 2축: 비중 (선)
     fig_loss.add_trace(go.Scatter(
         x=df_year_filtered['Year'],
         y=df_year_filtered['손실점유율_가정'],
         name='손실 비중(%, 가정용 대비)',
-        mode='lines+markers', # text 제거
+        mode='lines+markers', 
         line=dict(color=COLOR_LINE, width=3)
     ), secondary_y=True)
 
@@ -336,11 +338,10 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     st.divider()
 
     # ----------------------------------------------------
-    # [하단 그래프] 판매량 비교 (푸른색 계열 적용)
+    # [하단 그래프] 판매량 비교 (유지)
     # ----------------------------------------------------
     col1, col2 = st.columns(2)
     
-    # (좌) 가정용 판매량 vs 손실량
     with col1:
         st.markdown("##### ① 가정용 판매량 vs 손실 추정량")
         fig_u1 = make_subplots(specs=[[{"secondary_y": True}]])
@@ -352,7 +353,6 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
         fig_u1.update_yaxes(title_text="손실 비중 (%)", secondary_y=True, showticklabels=False) 
         st.plotly_chart(fig_u1, use_container_width=True)
 
-    # (우) 전체 판매량 vs 손실량
     with col2:
         st.markdown("##### ② 전체 판매량 vs 손실 추정량")
         fig_u2 = make_subplots(specs=[[{"secondary_y": True}]])
@@ -364,14 +364,22 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
         fig_u2.update_yaxes(title_text="손실 비중 (%)", secondary_y=True, showticklabels=False)
         st.plotly_chart(fig_u2, use_container_width=True)
     
-    # 테이블
+    # ----------------------------------------------------
+    # [형님 요청] 표 하이라이트 (핵심 컬럼 세로 강조)
+    # ----------------------------------------------------
     st.dataframe(
-        df_year_filtered.style.format({
+        df_year_filtered.style
+        .format({
             '전환율': '{:.1f}%', '손실점유율_가정': '{:.2f}%', '손실점유율_전체': '{:.2f}%',
             '총청구계량기수': '{:,.0f}', '가스레인지연결전수': '{:,.0f}', '인덕션_추정_수': '{:,.0f}',
             '가정용_판매량_전체': '{:,.0f}', '전체_판매량': '{:,.0f}', '연간손실추정_m3': '{:,.0f}',
             '잠재_가정용': '{:,.0f}', '잠재_전체': '{:,.0f}'
-        }),
+        })
+        # [핵심 수정] 특정 컬럼(인덕션_추정_수, 전환율) 세로 하이라이트 적용
+        .set_properties(
+            subset=['인덕션_추정_수', '전환율'], 
+            **{'background-color': '#ffffcc', 'font-weight': 'bold', 'color': 'black'}
+        ),
         use_container_width=True, hide_index=True
     )
     st.download_button("📥 상세 데이터 다운로드", convert_df(df_year_filtered), "상세_데이터.csv", "text/csv")
