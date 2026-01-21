@@ -17,9 +17,8 @@ st.set_page_config(
 # 2. 데이터 로드 및 유틸리티
 # ---------------------------------------------------------
 @st.cache_data(ttl=60)
-def load_data_final_v21(url):
+def load_data_final_v22(url):
     try:
-        # [수정] URL 따옴표 확인 (에러 해결)
         df = pd.read_excel(url, engine='openpyxl')
     except Exception as e:
         st.error(f"⚠️ 가스레인지 데이터 로드 실패: {e}")
@@ -49,12 +48,11 @@ def load_data_final_v21(url):
     return df
 
 @st.cache_data(ttl=60)
-def load_sales_data_final_v21():
+def load_sales_data_final_v22():
     """
     [판매량 데이터 로드]
     단위: 천m³ -> m³ (* 1000)
     """
-    # [수정] URL 따옴표 추가 (에러 해결)
     url = "https://raw.githubusercontent.com/Han11112222/citygas-induction-dashboard/main/%ED%8C%90%EB%A7%A4%EB%9F%89(%EA%B3%84%ED%9A%8D_%EC%8B%A4%EC%A0%81).xlsx"
     
     try:
@@ -92,23 +90,22 @@ def load_sales_data_final_v21():
 def convert_df(df):
     return df.to_csv(index=False).encode('utf-8-sig')
 
-# --- [디자인] 컬러 팔레트 ---
-COLOR_GAS = '#1f77b4'       # 기본 파랑
-COLOR_INDUCTION = '#a4c2f4' # 연한 하늘색
+# --- [디자인] 컬러 팔레트 (푸른색 계열 통일) ---
+COLOR_GAS = '#1f77b4'       # 기본 파랑 (가스레인지)
+COLOR_INDUCTION = '#a4c2f4' # 연한 하늘색 (인덕션)
 COLOR_LINE = '#d62728'      # 빨강 (비율 선)
 COLOR_LOSS_BLUE = '#115f9a' # 손실량 (딥 블루)
 COLOR_HIGHLIGHT_BG = '#a4c2f4' # 하이라이트 배경
 COLOR_HIGHLIGHT_LINE = '#1f77b4' # 하이라이트 선/텍스트
-COLOR_TEXT_LIGHTGREY = 'lightgrey' # 텍스트 색상
+COLOR_TEXT_LIGHTGREY = 'lightgrey' # 그래프 내부 텍스트 색상
 
 # ---------------------------------------------------------
 # 3. 데이터 로드 및 사이드바 구성
 # ---------------------------------------------------------
-# [수정] URL 따옴표 추가 (에러 해결)
 gas_url = "https://raw.githubusercontent.com/Han11112222/citygas-induction-dashboard/main/(ver4)%EA%B0%80%EC%A0%95%EC%9A%A9_%EA%B0%80%EC%8A%A4%EB%A0%88%EC%9D%B8%EC%A7%80_%EC%82%AC%EC%9A%A9%EC%9C%A0%EB%AC%B4(201501_202412).xlsx"
 
-df_raw = load_data_final_v21(gas_url)
-df_sales_raw = load_sales_data_final_v21()
+df_raw = load_data_final_v22(gas_url)
+df_sales_raw = load_sales_data_final_v22()
 
 if df_raw.empty:
     st.error("🚨 기본 데이터 로드 실패. 잠시 후 다시 시도해주세요.")
@@ -136,7 +133,7 @@ with st.sidebar:
     st.markdown("---")
     st.header("🔍 데이터 필터")
     
-    # [형님 요청] PPH 용어 삭제 및 기본값 5.0
+    # [PPH 용어 삭제 및 기본값 5.0]
     input_monthly_usage = st.number_input(
         "적용할 세대당 월평균 가스 사용량 (m³)", 
         min_value=0.0, 
@@ -144,7 +141,6 @@ with st.sidebar:
         value=5.0, 
         step=0.5
     )
-    # [수정] PPH 용어 삭제
     st.caption("※ 난방을 제외한 순수 취사 전용 사용량")
     
     st.divider()
@@ -174,7 +170,6 @@ st.markdown(f"### 📊 {selected_menu}")
 # =========================================================
 if selected_menu == "1. 전환 추세 및 상세 분석":
     
-    # [수정] PPH 용어 삭제된 설명 문구
     st.info("""
     **[인덕션 사용가구 추정 방법]**
     1. **인덕션 사용가구 추정** : 총 청구 계량기 수 (12월 기준) - 가스레인지 연결 전수 (12월 기준)
@@ -249,18 +244,20 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     fig_q.add_trace(go.Bar(x=df_year['Year'], y=df_year['가스레인지연결전수'], name='가스레인지(12월)', marker_color=COLOR_GAS), secondary_y=False)
     fig_q.add_trace(go.Bar(x=df_year['Year'], y=df_year['인덕션_추정_수'], name='인덕션(12월)', marker_color=COLOR_INDUCTION), secondary_y=False)
     
+    # [수정] 텍스트 위치를 'bottom center'로 변경
     fig_q.add_trace(go.Scatter(
         x=df_year['Year'], y=df_year['전환율'], name='전환율(%)', mode='lines+markers+text', 
         text=df_year['전환율'].apply(lambda x: f"{x:.1f}%"), 
-        textposition='top center',
+        textposition='bottom center', # [변경] top center -> bottom center
         textfont=dict(size=20, color=COLOR_TEXT_LIGHTGREY), 
         line=dict(color=COLOR_LINE, width=3)
     ), secondary_y=True)
     
     if start_highlight_year:
+        # [수정] 하이라이트 투명도(opacity)를 0.2 -> 0.4 로 진하게 변경
         fig_q.add_vrect(
             x0=start_highlight_year-0.5, x1=end_highlight_year+0.5, 
-            fillcolor=COLOR_HIGHLIGHT_BG, opacity=0.2, layer="below", line_width=0
+            fillcolor=COLOR_HIGHLIGHT_BG, opacity=0.4, layer="below", line_width=0
         )
         fig_q.add_vline(
             x=start_highlight_year-0.5, line_width=2, line_dash="dash", line_color=COLOR_HIGHLIGHT_LINE,
@@ -282,15 +279,13 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     latest_year_val = df_year_filtered['Year'].max()
     latest_loss_val = df_year_filtered[df_year_filtered['Year'] == latest_year_val]['연간손실추정_m3'].values[0] if pd.notna(latest_year_val) else 0
 
-    # 1축: 손실량 (막대)
+    # 1축: 손실량 (막대) - [수정] 텍스트 제거 (선 그래프로 이동)
     fig_loss.add_trace(go.Bar(
         x=df_year_filtered['Year'],
         y=df_year_filtered['연간손실추정_m3'],
         name='연간 손실량(m³)',
         marker_color=COLOR_LOSS_BLUE,
-        text=df_year_filtered['손실점유율_가정'].apply(lambda x: f"{x:.1f}%"),
-        textposition='inside',
-        textfont=dict(size=16, color=COLOR_TEXT_LIGHTGREY) 
+        # text 및 textposition 제거
     ), secondary_y=False)
     
     # 최신 연도 라벨
@@ -306,12 +301,15 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
             hoverinfo='skip'
         ), secondary_y=False)
 
-    # 2축: 비중 (선)
+    # 2축: 비중 (선) - [수정] 텍스트 추가 및 위치 'bottom center', 색상 'lightgrey' 적용
     fig_loss.add_trace(go.Scatter(
         x=df_year_filtered['Year'],
         y=df_year_filtered['손실점유율_가정'],
         name='손실 비중(%, 가정용 대비)',
-        mode='lines+markers', 
+        mode='lines+markers+text', # [변경] text 모드 추가
+        text=df_year_filtered['손실점유율_가정'].apply(lambda x: f"{x:.1f}%"), # [추가] 텍스트 데이터
+        textposition='bottom center', # [추가] 위치 설정
+        textfont=dict(size=16, color=COLOR_TEXT_LIGHTGREY), # [추가] 폰트 설정 (연한 회색)
         line=dict(color=COLOR_LINE, width=3)
     ), secondary_y=True)
 
