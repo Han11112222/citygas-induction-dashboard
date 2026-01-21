@@ -91,7 +91,7 @@ def load_sales_data():
         return df[['Year', 'Date', '가정용_판매량_전체', '전체_판매량']]
              
     except Exception as e:
-        # st.error(f"⚠️ 판매량 데이터 로드 중 에러: {e}") 
+        st.error(f"⚠️ 판매량 데이터 로드 중 에러: {e}") 
         return pd.DataFrame()
 
 @st.cache_data
@@ -130,7 +130,7 @@ with st.sidebar:
     st.header("🔥 분석 메뉴")
     selected_menu = st.radio(
         "분석 메뉴 선택",
-        ["1. 전환 추세 및 상세 분석", "ver2.0 분석 (12월 기준)", "2. 판매량 영향 분석", "3. 지역별 위험도 순위", "4. 주택 유형별 비교"]
+        ["1. 전환 추세 및 상세 분석", "2. 판매량 영향 분석", "3. 지역별 위험도 순위", "4. 주택 유형별 비교"]
     )
     
     st.markdown("---")
@@ -169,7 +169,7 @@ df = df_raw[
 st.markdown(f"### 📊 {selected_menu}")
 
 # =========================================================
-# [MENU 1] 전환 추세 및 상세 분석 (기존 유지)
+# [MENU 1] 전환 추세 및 상세 분석
 # =========================================================
 if selected_menu == "1. 전환 추세 및 상세 분석":
     
@@ -226,6 +226,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
         df_year['전체_판매량'] = 0
 
     # 3. 손실량 계산 (m³) - [핵심] 인덕션 수 * PPH(m³) = m³
+    # PPH가 월평균이므로, 월별 데이터를 합산한 '인덕션_추정_수'에 곱하면 연간 총 손실량이 됩니다.
     df['월별손실추정'] = df['인덕션_추정_수'] * input_pph
     df_loss_year = df.groupby('Year')['월별손실추정'].sum().reset_index()
     df_loss_year['Year'] = df_loss_year['Year'].astype(int)
@@ -238,37 +239,93 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     df_year['잠재_전체'] = df_year['전체_판매량'] + df_year['월별손실추정']
     df_year['손실점유율_전체'] = df_year.apply(lambda x: (x['월별손실추정'] / x['잠재_전체'] * 100) if x['잠재_전체'] > 0 else 0, axis=1)
     
-    # 5. 필터링 & 하이라이트
+    # 5. 필터링
     df_year_filtered = df_year[df_year['Year'] >= 2017].copy()
     df_year_filtered = df_year_filtered.sort_values('Year')
-    df_year_filtered['delta'] = df_year_filtered['전환율'].diff()
-    max_delta_year = df_year_filtered.loc[df_year_filtered['delta'].idxmax(), 'Year'] if not df_year_filtered.empty else None
-    
-    # ----------------------------------------------------
-    # 그래프 1: 세대 구성
-    # ----------------------------------------------------
-    st.markdown("##### 📊 연도별 세대 구성 및 전환율")
-    fig_q = make_subplots(specs=[[{"secondary_y": True}]])
-    fig_q.add_trace(go.Bar(x=df_year['Year'], y=df_year['가스레인지연결전수'], name='가스레인지(누적)', marker_color=COLOR_GAS), secondary_y=False)
-    fig_q.add_trace(go.Bar(x=df_year['Year'], y=df_year['인덕션_추정_수'], name='인덕션(누적)', marker_color=COLOR_INDUCTION), secondary_y=False)
-    fig_q.add_trace(go.Scatter(x=df_year['Year'], y=df_year['전환율'], name='전환율(%)', mode='lines+markers+text', 
-                               text=df_year['전환율'].apply(lambda x: f"{x:.1f}%"), textposition='top center', 
-                               line=dict(color=COLOR_LINE, width=3)), secondary_y=True)
-    
-    if max_delta_year:
-        fig_q.add_vrect(x0=max_delta_year-0.5, x1=df_year['Year'].max()+0.5, 
-                        fillcolor="yellow", opacity=0.15, layer="below", line_width=0,
-                        annotation_text="🚀급증 구간", annotation_position="top left")
 
-    fig_q.update_layout(barmode='stack', legend=dict(orientation="h", y=1.1), height=500)
-    fig_q.update_yaxes(title_text="연간 누적 세대수", secondary_y=False)
-    fig_q.update_yaxes(title_text="전환율(%)", secondary_y=True, range=[0, df_year['전환율'].max()*1.2])
-    st.plotly_chart(fig_q, use_container_width=True)
+    # [형님 요청 1] 하이라이트 로직 변경: 전환율 10% 넘는 최초 연도부터 끝까지
+    highlight_condition = df_year_filtered['전환율'] > 10.0
+    start_highlight_year = df_year_filtered.loc[highlight_condition, 'Year'].min() if highlight_condition.any() else None
+    end_highlight_year = df_year_filtered['Year'].max()
+
+    # ----------------------------------------------------
+    # 좌우 그래프 배치를 위한 컬럼 생성
+    # ----------------------------------------------------
+    st.markdown("#### 📊 연도별 전환 현황 및 손실 추정")
+    col_left, col_right = st.columns(2)
+
+    # [좌측 그래프] 기존 세대 구성 및 전환율
+    with col_left:
+        st.markdown("##### 1️⃣ 세대 구성 및 전환율 추이")
+        fig_q = make_subplots(specs=[[{"secondary_y": True}]])
+        fig_q.add_trace(go.Bar(x=df_year['Year'], y=df_year['가스레인지연결전수'], name='가스레인지(누적)', marker_color=COLOR_GAS), secondary_y=False)
+        fig_q.add_trace(go.Bar(x=df_year['Year'], y=df_year['인덕션_추정_수'], name='인덕션(누적)', marker_color=COLOR_INDUCTION), secondary_y=False)
+        fig_q.add_trace(go.Scatter(x=df_year['Year'], y=df_year['전환율'], name='전환율(%)', mode='lines+markers+text', 
+                                   text=df_year['전환율'].apply(lambda x: f"{x:.1f}%"), textposition='top center', 
+                                   line=dict(color=COLOR_LINE, width=3)), secondary_y=True)
+        
+        # [수정된 하이라이트 적용]
+        if start_highlight_year is not None:
+            fig_q.add_vrect(x0=start_highlight_year-0.5, x1=end_highlight_year+0.5, 
+                            fillcolor="yellow", opacity=0.15, layer="below", line_width=0,
+                            annotation_text="🚀전환율 10% 이상 구간", annotation_position="top left")
+
+        fig_q.update_layout(barmode='stack', legend=dict(orientation="h", y=1.1), height=500, hovermode="x unified")
+        fig_q.update_yaxes(title_text="연간 누적 세대수", secondary_y=False)
+        fig_q.update_yaxes(title_text="전환율(%)", secondary_y=True, range=[0, df_year['전환율'].max()*1.2])
+        st.plotly_chart(fig_q, use_container_width=True)
+
+    # [형님 요청 2] 우측 새 그래프: 연도별 손실 추정량(m3) 및 비율
+    with col_right:
+        st.markdown("##### 2️⃣ 인덕션 전환에 따른 손실 추정량 (연간 합계)")
+        # 이중축 그래프 생성
+        fig_loss = make_subplots(specs=[[{"secondary_y": True}]])
+
+        # 1축 (막대): 절대 손실량 (m3)
+        # df_year_filtered['월별손실추정']은 연간 합계 데이터입니다.
+        fig_loss.add_trace(
+            go.Bar(
+                x=df_year_filtered['Year'],
+                y=df_year_filtered['월별손실추정'],
+                name='손실 추정량(m³)',
+                marker_color=COLOR_INDUCTION,
+                text=df_year_filtered['월별손실추정'].apply(lambda x: f"{x:,.0f}"), # 천단위 콤마
+                textposition="auto"
+            ),
+            secondary_y=False
+        )
+
+        # 2축 (선): 손실 비중 (%) - 가정용 기준 예시
+        fig_loss.add_trace(
+            go.Scatter(
+                x=df_year_filtered['Year'],
+                y=df_year_filtered['손실점유율_가정'],
+                name='손실 비중(%, 가정용 대비)',
+                mode='lines+markers+text',
+                text=df_year_filtered['손실점유율_가정'].apply(lambda x: f"{x:.1f}%"),
+                textposition='top center',
+                line=dict(color=COLOR_LINE, width=3)
+            ),
+            secondary_y=True
+        )
+
+        # 레이아웃 설정 (좌측 그래프와 높이 통일)
+        fig_loss.update_layout(
+            legend=dict(orientation="h", y=1.1),
+            height=500,
+            hovermode="x unified"
+        )
+        fig_loss.update_yaxes(title_text="연간 손실량 (m³)", secondary_y=False)
+        # 비중 축 범위 설정 (최대값의 1.2배 정도로 여유 있게)
+        ratio_max = df_year_filtered['손실점유율_가정'].max() if not df_year_filtered.empty else 10
+        fig_loss.update_yaxes(title_text="손실 비중 (%)", secondary_y=True, range=[0, ratio_max * 1.2])
+        
+        st.plotly_chart(fig_loss, use_container_width=True)
 
     st.divider()
 
     # ----------------------------------------------------
-    # 그래프 2 & 3: 판매량 비교 (좌우 배치 / 높이 500)
+    # 그래프 2 & 3: 판매량 비교 (기존 하단 그래프들)
     # ----------------------------------------------------
     col1, col2 = st.columns(2)
     
@@ -438,115 +495,6 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     )
     st.download_button(f"📥 {sel_region}_데이터 다운로드", convert_df(df_r), f"{sel_region}_데이터.csv", "text/csv")
 
-# =========================================================
-# [MENU 2] ver2.0 분석 (12월 기준) - [형님 요청 신규 탭]
-# =========================================================
-elif selected_menu == "ver2.0 분석 (12월 기준)":
-    
-    st.info("💡 **Ver 2.0 분석 포인트:** \n\n1. **세대수(Stock):** 매년 **'12월 데이터'**만 추출하여 누적 왜곡(1,200만 -> 100만)을 해결했습니다. \n2. **사용량/손실량(Flow):** 1년 동안의 총량이므로 기존대로 **'1~12월 누적 합계'**를 사용합니다.")
-
-    # 1. [핵심 로직] 12월 데이터만 필터링 (Stock Data: 세대수)
-    df_dec = df[df['Date'].dt.month == 12].copy()
-    
-    # 2. 데이터 집계 (세대수: 12월 기준)
-    df_ver2_stock = df_dec.groupby('Year')[['총청구계량기수', '가스레인지연결전수', '인덕션_추정_수']].sum().reset_index()
-    df_ver2_stock['Year'] = df_ver2_stock['Year'].astype(int)
-    df_ver2_stock['전환율'] = (df_ver2_stock['인덕션_추정_수'] / df_ver2_stock['총청구계량기수']) * 100
-    
-    # 3. 판매량/손실량 데이터 (Flow Data: 연간 전체 합산 사용)
-    # 손실량 계산 (전체 월 합계 사용)
-    df['월별손실추정'] = df['인덕션_추정_수'] * input_pph
-    df_flow_loss = df.groupby('Year')['월별손실추정'].sum().reset_index()
-    
-    # 판매량 데이터 (전체 월 합계 사용)
-    if not df_sales_raw.empty:
-        df_sales_raw['Year'] = df_sales_raw['Year'].astype(int)
-        df_sales_year = df_sales_raw.groupby('Year')[['가정용_판매량_전체', '전체_판매량']].sum().reset_index()
-    else:
-        df_sales_year = pd.DataFrame(columns=['Year', '가정용_판매량_전체', '전체_판매량'])
-
-    # 4. 병합 (Stock + Flow)
-    df_ver2 = pd.merge(df_ver2_stock, df_flow_loss, on='Year', how='left')
-    if not df_sales_year.empty:
-        df_ver2 = pd.merge(df_ver2, df_sales_year, on='Year', how='left')
-        df_ver2['가정용_판매량_전체'] = df_ver2['가정용_판매량_전체'].fillna(0)
-        df_ver2['전체_판매량'] = df_ver2['전체_판매량'].fillna(0)
-    else:
-        df_ver2['가정용_판매량_전체'] = 0
-        df_ver2['전체_판매량'] = 0
-        
-    # 점유율 계산 (Ver 2.0용)
-    df_ver2['잠재_가정용'] = df_ver2['가정용_판매량_전체'] + df_ver2['월별손실추정']
-    df_ver2['손실점유율_가정'] = df_ver2.apply(lambda x: (x['월별손실추정'] / x['잠재_가정용'] * 100) if x['잠재_가정용'] > 0 else 0, axis=1)
-    df_ver2['잠재_전체'] = df_ver2['전체_판매량'] + df_ver2['월별손실추정']
-    df_ver2['손실점유율_전체'] = df_ver2.apply(lambda x: (x['월별손실추정'] / x['잠재_전체'] * 100) if x['잠재_전체'] > 0 else 0, axis=1)
-
-    df_ver2_filtered = df_ver2[df_ver2['Year'] >= 2017].copy()
-    
-    # ----------------------------------------------------
-    # Ver 2.0 그래프 1: 세대 구성 (12월 기준)
-    # ----------------------------------------------------
-    st.markdown("##### 📊 연도별 세대 구성 (12월 기준) 및 전환율")
-    fig_q = make_subplots(specs=[[{"secondary_y": True}]])
-    fig_q.add_trace(go.Bar(x=df_ver2['Year'], y=df_ver2['가스레인지연결전수'], name='가스레인지(12월)', marker_color=COLOR_GAS), secondary_y=False)
-    fig_q.add_trace(go.Bar(x=df_ver2['Year'], y=df_ver2['인덕션_추정_수'], name='인덕션(12월)', marker_color=COLOR_INDUCTION), secondary_y=False)
-    fig_q.add_trace(go.Scatter(x=df_ver2['Year'], y=df_ver2['전환율'], name='전환율(%)', mode='lines+markers+text', 
-                               text=df_ver2['전환율'].apply(lambda x: f"{x:.1f}%"), textposition='top center', 
-                               line=dict(color=COLOR_LINE, width=3)), secondary_y=True)
-    
-    fig_q.update_layout(barmode='stack', legend=dict(orientation="h", y=1.1), height=500)
-    fig_q.update_yaxes(title_text="세대수 (12월 기준)", secondary_y=False)
-    st.plotly_chart(fig_q, use_container_width=True)
-
-    st.divider()
-
-    # ----------------------------------------------------
-    # Ver 2.0 그래프 2 & 3: 판매량 비교
-    # ----------------------------------------------------
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("##### ① 가정용 판매량 vs 손실 추정량 (연간합계)")
-        fig_u1 = make_subplots(specs=[[{"secondary_y": True}]])
-        fig_u1.add_trace(go.Bar(x=df_ver2_filtered['Year'], y=df_ver2_filtered['가정용_판매량_전체'], name='가정용 판매량', marker_color=COLOR_GAS, opacity=0.7), secondary_y=False)
-        fig_u1.add_trace(go.Bar(x=df_ver2_filtered['Year'], y=df_ver2_filtered['월별손실추정'], name='손실량', marker_color=COLOR_INDUCTION), secondary_y=False)
-        fig_u1.add_trace(go.Scatter(x=df_ver2_filtered['Year'], y=df_ver2_filtered['손실점유율_가정'], name='손실 비중', mode='lines+markers+text', text=df_ver2_filtered['손실점유율_가정'].apply(lambda x: f"{x:.2f}%"), textposition='top center', line=dict(color=COLOR_LINE, width=2)), secondary_y=True)
-        fig_u1.update_layout(barmode='stack', legend=dict(orientation="h", y=1.1), height=500)
-        fig_u1.update_yaxes(title_text="판매량 (m³)", secondary_y=False)
-        fig_u1.update_yaxes(title_text="손실 비중(%)", secondary_y=True)
-        st.plotly_chart(fig_u1, use_container_width=True)
-
-    with col2:
-        st.markdown("##### ② 전체 판매량 vs 손실 추정량 (연간합계)")
-        fig_u2 = make_subplots(specs=[[{"secondary_y": True}]])
-        fig_u2.add_trace(go.Bar(x=df_ver2_filtered['Year'], y=df_ver2_filtered['전체_판매량'], name='전체 판매량', marker_color=COLOR_GAS, opacity=0.7), secondary_y=False)
-        fig_u2.add_trace(go.Bar(x=df_ver2_filtered['Year'], y=df_ver2_filtered['월별손실추정'], name='손실량', marker_color=COLOR_INDUCTION), secondary_y=False)
-        fig_u2.add_trace(go.Scatter(x=df_ver2_filtered['Year'], y=df_ver2_filtered['손실점유율_전체'], name='손실 비중', mode='lines+markers+text', text=df_ver2_filtered['손실점유율_전체'].apply(lambda x: f"{x:.2f}%"), textposition='top center', line=dict(color=COLOR_LINE, width=2)), secondary_y=True)
-        fig_u2.update_layout(barmode='stack', legend=dict(orientation="h", y=1.1), height=500)
-        fig_u2.update_yaxes(title_text="전체 판매량 (m³)", secondary_y=False)
-        fig_u2.update_yaxes(title_text="손실 비중(%)", secondary_y=True)
-        st.plotly_chart(fig_u2, use_container_width=True)
-    
-    # 하단 상세 데이터 표
-    st.dataframe(
-        df_ver2_filtered.style.format({
-            '전환율': '{:.1f}%',
-            '손실점유율_가정': '{:.2f}%',
-            '손실점유율_전체': '{:.2f}%',
-            '총청구계량기수': '{:,.0f}',
-            '가스레인지연결전수': '{:,.0f}',
-            '인덕션_추정_수': '{:,.0f}',
-            '가정용_판매량_전체': '{:,.0f}',
-            '전체_판매량': '{:,.0f}',
-            '월별손실추정': '{:,.0f}',
-            '잠재_가정용': '{:,.0f}',
-            '잠재_전체': '{:,.0f}'
-        }),
-        use_container_width=True,
-        hide_index=True
-    )
-    st.download_button("📥 Ver 2.0 데이터 다운로드", convert_df(df_ver2_filtered), "Ver2_데이터.csv", "text/csv")
-
 
 # =========================================================
 # [MENU 2~4] 기존 차트 유지
@@ -554,8 +502,10 @@ elif selected_menu == "ver2.0 분석 (12월 기준)":
 elif selected_menu == "2. 판매량 영향 분석":
     st.markdown("#### 📉 인덕션 전환율 vs 세대당 사용량(PPH)")
     st.info("⚠️ 주의: 아래 산점도의 '세대당 사용량'은 데이터에 있는 **전체 사용량(난방 포함)**을 기준으로 합니다.")
+    
     df['Real_PPH'] = df.apply(lambda x: (x['사용량(m3)']/x['가스레인지연결전수']) if x['가스레인지연결전수']>0 else 0, axis=1)
     df_s = df.groupby(['시군구', 'Date'])[['인덕션_전환율', 'Real_PPH']].mean().reset_index().dropna()
+    
     if not df_s.empty:
         fig2 = px.scatter(df_s, x='인덕션_전환율', y='Real_PPH', color='시군구', trendline="ols", labels={'Real_PPH': '세대당 총 사용량(m³)'})
         st.plotly_chart(fig2, use_container_width=True)
@@ -570,6 +520,7 @@ elif selected_menu == "3. 지역별 위험도 순위":
     df_l = df[df['Date'] == latest].groupby('시군구')[['총청구계량기수', '가스레인지연결전수']].sum().reset_index()
     df_l['인덕션_전환율'] = (1 - df_l['가스레인지연결전수'] / df_l['총청구계량기수']) * 100
     df_l = df_l.sort_values('인덕션_전환율', ascending=False)
+    
     fig3 = px.bar(df_l, x='시군구', y='인덕션_전환율', color='인덕션_전환율', text_auto='.1f', 
                   title=f"기준월: {latest.strftime('%Y-%m')}", color_continuous_scale='Blues')
     st.plotly_chart(fig3, use_container_width=True)
@@ -580,8 +531,10 @@ elif selected_menu == "4. 주택 유형별 비교":
     st.markdown("#### 🏢 공동주택(APT) vs 단독주택 패턴 비교")
     df_t = df.groupby(['Date', '용도'])[['총청구계량기수', '가스레인지연결전수']].sum().reset_index()
     df_t['전환율'] = (1 - df_t['가스레인지연결전수'] / df_t['총청구계량기수']) * 100
+    
     fig4 = px.line(df_t, x='Date', y='전환율', color='용도', markers=True)
     st.plotly_chart(fig4, use_container_width=True)
+    
     df_pivot = df_t.pivot(index='Date', columns='용도', values='전환율').reset_index()
     st.dataframe(df_pivot.style.format("{:.1f}%", subset=df_pivot.columns[1:]), use_container_width=True, hide_index=True)
     st.download_button("📥 유형별 데이터 다운로드", convert_df(df_pivot), "유형별_비교.csv", "text/csv")
