@@ -17,7 +17,7 @@ st.set_page_config(
 # 2. 데이터 로드 및 유틸리티
 # ---------------------------------------------------------
 @st.cache_data(ttl=60)
-def load_data_final_v16(url):
+def load_data_final_v17(url):
     try:
         df = pd.read_excel(url, engine='openpyxl')
     except Exception as e:
@@ -48,7 +48,7 @@ def load_data_final_v16(url):
     return df
 
 @st.cache_data(ttl=60)
-def load_sales_data_final_v16():
+def load_sales_data_final_v17():
     """
     [판매량 데이터 로드]
     단위: 천m³ -> m³ (* 1000)
@@ -90,20 +90,20 @@ def load_sales_data_final_v16():
 def convert_df(df):
     return df.to_csv(index=False).encode('utf-8-sig')
 
-# --- [디자인] 컬러 팔레트 ---
-COLOR_GAS = '#1f77b4'       # 진한 파랑 (판매량)
-COLOR_INDUCTION = '#a4c2f4' # 연한 하늘색 (인덕션 수)
-COLOR_LINE = '#d62728'      # 빨강 (비율)
-# [신규] 손실량 전용 진한 색상 (세련된 오렌지 레드)
-COLOR_LOSS_DARK = '#D35400' 
+# --- [디자인] 컬러 팔레트 (형님 요청 반영: 푸른색 계열 통일) ---
+COLOR_GAS = '#1f77b4'       # 기본 파랑 (가스레인지/판매량)
+COLOR_INDUCTION = '#a4c2f4' # 연한 하늘색 (인덕션 수 - Stack용 대비)
+COLOR_LINE = '#d62728'      # 빨강 (비율 선 - 강조용 유지)
+# [변경] 손실량: 붉은색 제거 -> 깊이감 있는 세련된 딥 블루 적용
+COLOR_LOSS_BLUE = '#115f9a' 
 
 # ---------------------------------------------------------
 # 3. 데이터 로드 및 사이드바 구성
 # ---------------------------------------------------------
 gas_url = "https://raw.githubusercontent.com/Han11112222/citygas-induction-dashboard/main/(ver4)%EA%B0%80%EC%A0%95%EC%9A%A9_%EA%B0%80%EC%8A%A4%EB%A0%88%EC%9D%B8%EC%A7%80_%EC%82%AC%EC%9A%A9%EC%9C%A0%EB%AC%B4(201501_202412).xlsx"
 
-df_raw = load_data_final_v16(gas_url)
-df_sales_raw = load_sales_data_final_v16()
+df_raw = load_data_final_v17(gas_url)
+df_sales_raw = load_sales_data_final_v17()
 
 if df_raw.empty:
     st.error("🚨 기본 데이터 로드 실패. 잠시 후 다시 시도해주세요.")
@@ -123,7 +123,7 @@ else:
 
 with st.sidebar:
     st.header("🔥 분석 메뉴")
-    # [형님 요청] 메뉴 정리: 한 가지만 남김
+    # 단일 메뉴
     selected_menu = st.radio(
         "분석 메뉴 선택",
         ["1. 전환 추세 및 상세 분석"]
@@ -236,7 +236,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     end_highlight_year = df_year_filtered['Year'].max()
 
     # ----------------------------------------------------
-    # [형님 요청] 그래프 1: 세대 구성 - 하이라이트 세련되게 변경
+    # [형님 요청] 그래프 1: 세대 구성 - 하이라이트 진하게(위기 강조)
     # ----------------------------------------------------
     st.markdown("##### 1. 연도별 세대 구성(12월) 및 전환율")
     fig_q = make_subplots(specs=[[{"secondary_y": True}]])
@@ -247,14 +247,14 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
                                line=dict(color=COLOR_LINE, width=3)), secondary_y=True)
     
     if start_highlight_year:
-        # [수정] 세련된 하이라이트: 은은한 배경 + 강렬한 시작선과 화살표 주석
+        # [수정] 위기 상황 강조: 붉은 계열(red) 배경 + 투명도 증가(0.25)
         fig_q.add_vrect(
             x0=start_highlight_year-0.5, x1=end_highlight_year+0.5, 
-            fillcolor="gray", opacity=0.1, layer="below", line_width=0
+            fillcolor="red", opacity=0.25, layer="below", line_width=0
         )
         fig_q.add_vline(
             x=start_highlight_year-0.5, line_width=2, line_dash="dash", line_color="#d62728",
-            annotation_text="🚀 전환 가속화 (10% 돌파)", 
+            annotation_text="🚀 전환 가속화 (위기 시작)", # 텍스트도 약간 수정
             annotation_position="top left",
             annotation_font=dict(size=14, color="#d62728", family="Arial Black")
         )
@@ -267,24 +267,23 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     st.markdown("---") 
 
     # ----------------------------------------------------
-    # [형님 요청] 그래프 2: 연간 손실 추정량 (색상 변경 + 최신년도 라벨)
+    # [형님 요청] 그래프 2: 연간 손실 추정량 (푸른색 계열 적용)
     # ----------------------------------------------------
     st.markdown("##### 2. 연간 가정용 손실량 추정 및 비중")
     fig_loss = make_subplots(specs=[[{"secondary_y": True}]])
     
-    # 최신 연도 데이터 파악
     latest_year_val = df_year_filtered['Year'].max()
     latest_loss_val = df_year_filtered[df_year_filtered['Year'] == latest_year_val]['연간손실추정_m3'].values[0] if pd.notna(latest_year_val) else 0
 
-    # 1축: 손실량 (막대) - [수정] 진한 색상 적용, 텍스트 제거
+    # 1축: 손실량 (막대) - [수정] 딥 블루 적용
     fig_loss.add_trace(go.Bar(
         x=df_year_filtered['Year'],
         y=df_year_filtered['연간손실추정_m3'],
         name='연간 손실량(m³)',
-        marker_color=COLOR_LOSS_DARK # 진한 색상 적용
+        marker_color=COLOR_LOSS_BLUE # 딥 블루
     ), secondary_y=False)
     
-    # [수정] 최신 연도(2024) 상단에만 라벨 표시를 위한 별도 Trace 추가
+    # 최신 연도 라벨 (색상 맞춰서)
     if pd.notna(latest_year_val):
         fig_loss.add_trace(go.Scatter(
             x=[latest_year_val],
@@ -292,7 +291,7 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
             mode='text',
             text=[f"{latest_loss_val:,.0f} m³"],
             textposition="top center",
-            textfont=dict(size=15, color=COLOR_LOSS_DARK, family="Arial Black"),
+            textfont=dict(size=15, color=COLOR_LOSS_BLUE, family="Arial Black"), # 텍스트도 블루
             showlegend=False,
             hoverinfo='skip'
         ), secondary_y=False)
@@ -332,28 +331,28 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
     st.divider()
 
     # ----------------------------------------------------
-    # [하단 그래프] 판매량 비교 (좌우 배치 유지)
+    # [하단 그래프] 판매량 비교 (푸른색 계열 적용)
     # ----------------------------------------------------
     col1, col2 = st.columns(2)
     
-    # (좌) 가정용 판매량 vs 손실량 - [수정] 손실량 색상 변경 반영
+    # (좌) 가정용 판매량 vs 손실량 - [수정] 딥 블루 적용
     with col1:
         st.markdown("##### ① 가정용 판매량 vs 손실 추정량")
         fig_u1 = make_subplots(specs=[[{"secondary_y": True}]])
         fig_u1.add_trace(go.Bar(x=df_year_filtered['Year'], y=df_year_filtered['가정용_판매량_전체'], name='가정용 판매량', marker_color=COLOR_GAS, opacity=0.7), secondary_y=False)
-        fig_u1.add_trace(go.Bar(x=df_year_filtered['Year'], y=df_year_filtered['연간손실추정_m3'], name='손실량(우측)', marker_color=COLOR_LOSS_DARK), secondary_y=False)
+        fig_u1.add_trace(go.Bar(x=df_year_filtered['Year'], y=df_year_filtered['연간손실추정_m3'], name='손실량(우측)', marker_color=COLOR_LOSS_BLUE), secondary_y=False)
         fig_u1.add_trace(go.Scatter(x=df_year_filtered['Year'], y=df_year_filtered['손실점유율_가정'], name='손실 비중', mode='lines+markers+text', text=df_year_filtered['손실점유율_가정'].apply(lambda x: f"{x:.2f}%"), textposition='top center', line=dict(color=COLOR_LINE, width=2)), secondary_y=True)
         fig_u1.update_layout(barmode='stack', legend=dict(orientation="h", y=1.1), height=500)
         fig_u1.update_yaxes(title_text="사용량 (m³)", secondary_y=False)
         fig_u1.update_yaxes(title_text="손실 비중 (%)", secondary_y=True, showticklabels=False) 
         st.plotly_chart(fig_u1, use_container_width=True)
 
-    # (우) 전체 판매량 vs 손실량 - [수정] 손실량 색상 변경 반영
+    # (우) 전체 판매량 vs 손실량 - [수정] 딥 블루 적용
     with col2:
         st.markdown("##### ② 전체 판매량 vs 손실 추정량")
         fig_u2 = make_subplots(specs=[[{"secondary_y": True}]])
         fig_u2.add_trace(go.Bar(x=df_year_filtered['Year'], y=df_year_filtered['전체_판매량'], name='전체 판매량', marker_color=COLOR_GAS, opacity=0.7), secondary_y=False)
-        fig_u2.add_trace(go.Bar(x=df_year_filtered['Year'], y=df_year_filtered['연간손실추정_m3'], name='손실량(우측)', marker_color=COLOR_LOSS_DARK), secondary_y=False)
+        fig_u2.add_trace(go.Bar(x=df_year_filtered['Year'], y=df_year_filtered['연간손실추정_m3'], name='손실량(우측)', marker_color=COLOR_LOSS_BLUE), secondary_y=False)
         fig_u2.add_trace(go.Scatter(x=df_year_filtered['Year'], y=df_year_filtered['손실점유율_전체'], name='손실 비중', mode='lines+markers+text', text=df_year_filtered['손실점유율_전체'].apply(lambda x: f"{x:.2f}%"), textposition='top center', line=dict(color=COLOR_LINE, width=2)), secondary_y=True)
         fig_u2.update_layout(barmode='stack', legend=dict(orientation="h", y=1.1), height=500)
         fig_u2.update_yaxes(title_text="사용량 (m³)", secondary_y=False)
@@ -432,12 +431,12 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
         st.plotly_chart(fig_r1, use_container_width=True)
     with c6:
         fig_r2 = make_subplots(specs=[[{"secondary_y": True}]])
-        # [수정] 지역별 손실량 그래프도 진한 색상 적용
+        # [수정] 딥 블루 적용
         fig_r2.add_trace(go.Bar(
             x=df_r_filtered['Year'], 
             y=df_r_filtered['연간손실추정_m3'], 
             name=f'[{sel_region}] 손실 추정량', 
-            marker_color=COLOR_LOSS_DARK, # 진한 색상
+            marker_color=COLOR_LOSS_BLUE, # 딥 블루
             text=df_r_filtered['연간손실추정_m3'].apply(lambda x: f"{x:,.0f}"),
             textposition='auto'
         ), secondary_y=False) 
@@ -450,5 +449,3 @@ if selected_menu == "1. 전환 추세 및 상세 분석":
         st.plotly_chart(fig_r2, use_container_width=True)
     st.dataframe(df_r_filtered.style.format({'전환율': '{:.1f}%', '총청구계량기수': '{:,.0f}', '가스레인지연결전수': '{:,.0f}', '인덕션_추정_수': '{:,.0f}', '연간손실추정_m3': '{:,.0f}'}), use_container_width=True, hide_index=True)
     st.download_button(f"📥 {sel_region}_데이터 다운로드", convert_df(df_r), f"{sel_region}_데이터.csv", "text/csv")
-
-# [형님 요청] 나머지 메뉴 코드 삭제됨
