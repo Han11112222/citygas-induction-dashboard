@@ -17,7 +17,7 @@ st.set_page_config(
 # 2. 데이터 로드 및 유틸리티
 # ---------------------------------------------------------
 @st.cache_data(ttl=60)
-def load_data_final_v23(url):
+def load_data_final_v24(url):
     try:
         df = pd.read_excel(url, engine='openpyxl')
     except Exception as e:
@@ -37,7 +37,7 @@ def load_data_final_v23(url):
         df['Date'] = pd.to_datetime(df['년월'], format='%Y%m', errors='coerce')
         df = df.dropna(subset=['Date'])
     
-    # 파생 변수 생성
+    # 파생 변수
     if '총청구계량기수' in df.columns and '가스레인지연결전수' in df.columns:
         df['인덕션_추정_수'] = df['총청구계량기수'] - df['가스레인지연결전수']
         df['인덕션_전환율'] = df.apply(lambda x: (x['인덕션_추정_수']/x['총청구계량기수']*100) if x['총청구계량기수']>0 else 0, axis=1)
@@ -48,7 +48,7 @@ def load_data_final_v23(url):
     return df
 
 @st.cache_data(ttl=60)
-def load_sales_data_final_v23():
+def load_sales_data_final_v24():
     """
     [판매량 데이터 로드]
     단위: 천m³ -> m³ (* 1000)
@@ -90,9 +90,9 @@ def load_sales_data_final_v23():
 def convert_df(df):
     return df.to_csv(index=False).encode('utf-8-sig')
 
-# --- [디자인] 컬러 팔레트 (푸른색 계열 통일) ---
-COLOR_GAS = '#1f77b4'       # 기본 파랑 (가스레인지)
-COLOR_INDUCTION = '#a4c2f4' # 연한 하늘색 (인덕션)
+# --- [디자인] 컬러 팔레트 ---
+COLOR_GAS = '#1f77b4'       # 기본 파랑
+COLOR_INDUCTION = '#a4c2f4' # 연한 하늘색
 COLOR_LINE = '#d62728'      # 빨강 (비율 선)
 COLOR_LOSS_BLUE = '#115f9a' # 손실량 (딥 블루)
 COLOR_HIGHLIGHT_BG = '#a4c2f4' # 하이라이트 배경
@@ -104,8 +104,8 @@ COLOR_TEXT_LIGHTGREY = 'lightgrey' # 그래프 내부 텍스트 색상
 # ---------------------------------------------------------
 gas_url = "https://raw.githubusercontent.com/Han11112222/citygas-induction-dashboard/main/(ver4)%EA%B0%80%EC%A0%95%EC%9A%A9_%EA%B0%80%EC%8A%A4%EB%A0%88%EC%9D%B8%EC%A7%80_%EC%82%AC%EC%9A%A9%EC%9C%A0%EB%AC%B4(201501_202412).xlsx"
 
-df_raw = load_data_final_v23(gas_url)
-df_sales_raw = load_sales_data_final_v23()
+df_raw = load_data_final_v24(gas_url)
+df_sales_raw = load_sales_data_final_v24()
 
 if df_raw.empty:
     st.error("🚨 기본 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
@@ -169,10 +169,10 @@ st.markdown(f"### 📊 {selected_menu}")
 # [MENU 0] 원페이지 리뷰 (One Page Review)
 # =========================================================
 if selected_menu == "원페이지 리뷰 (One Page Review)":
-    st.subheader("📋 원페이지 리뷰 (One Page Review)")
+    # [수정] 제목 중복 제거 (st.subheader 제거 or markdown으로 통일)
+    # 이미 상단에 st.markdown(f"### {selected_menu}")가 있으므로 여기서는 생략하거나 부가 설명만
     
     # 1. 데이터 준비 (비교: 최신 연도 vs 전년도)
-    # 12월 데이터만 사용
     df_dec = df[df['Date'].dt.month == 12].copy()
     
     # 연도별 집계
@@ -188,10 +188,10 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
         curr_data = df_summary[df_summary['Year'] == latest_year].iloc[0]
         prev_data = df_summary[df_summary['Year'] == prev_year].iloc[0] if prev_year in df_summary['Year'].values else None
         
-        # 매출액 계산용 단가 (임시: 950원/m3)
+        # 매출액 계산용 단가
         unit_price = 950 
         
-        # 2. KPI 메트릭 표시 (3단 구성)
+        # 2. KPI 메트릭 표시
         kpi1, kpi2, kpi3 = st.columns(3)
         
         with kpi1:
@@ -200,7 +200,7 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
                 label=f"🔥 {latest_year}년 인덕션 전환율",
                 value=f"{curr_data['전환율']:.1f}%",
                 delta=f"{delta_val:+.1f}%p (전년 대비)",
-                delta_color="inverse" # 전환율 증가는 도시가스 입장에서 'inverse(빨강)'
+                delta_color="inverse"
             )
             
         with kpi2:
@@ -225,17 +225,18 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
                 delta_color="inverse"
             )
 
-        # 3. 분석 인사이트 (자동 문구 생성)
-        st.success(f"""
-        **💡 [분석 인사이트]** **{latest_year}년 12월 기준**, 전체 **{curr_data['총청구계량기수']:,.0f}세대** 중 약 **{curr_data['인덕션_추정_수']:,.0f}세대**가 인덕션을 사용하는 것으로 추정됩니다.
-        이로 인해 연간 약 **{loss_vol:,.0f}m³**의 판매량 감소가 발생하고 있으며, 이는 전년 대비 **{delta_loss:,.0f}m³** 확대된 수치입니다.
-        *(산출 근거: 12월 말 기준 인덕션 추정 세대수 × 월평균 {input_monthly_usage}m³ × 12개월)*
+        # 3. [수정] 분석 인사이트 (1, 2, 3번 세로 배치)
+        st.info(f"""
+        **💡 [분석 인사이트] ({latest_year}년 12월 기준)**
+        1. **전환 현황**: 전체 **{curr_data['총청구계량기수']:,.0f}세대** 중 약 **{curr_data['인덕션_추정_수']:,.0f}세대**가 인덕션을 사용하는 것으로 추정됩니다.
+        2. **손실 규모**: 이로 인해 연간 약 **{loss_vol:,.0f}m³**의 판매량 감소가 발생하고 있으며, 이는 전년 대비 **{delta_loss:,.0f}m³** 확대된 수치입니다.
+        3. **산출 근거**: 12월 말 기준 인덕션 추정 세대수 × 월평균 {input_monthly_usage}m³ × 12개월
         """)
         
-        # 4. 요약 그래프 (추이 확인용)
+        # 4. 요약 그래프
         col1, col2 = st.columns(2)
         
-        # 그래프 1: 전환율 추이 (Line)
+        # 그래프 1: 전환율 추이
         with col1:
             fig_trend = go.Figure()
             fig_trend.add_trace(go.Scatter(x=df_summary['Year'], y=df_summary['전환율'], mode='lines+markers+text',
@@ -244,7 +245,7 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
             fig_trend.update_layout(title="연도별 인덕션 전환율 추이", height=400)
             st.plotly_chart(fig_trend, use_container_width=True)
             
-        # 그래프 2: 손실량 추이 (Bar)
+        # 그래프 2: 손실량 추이
         with col2:
             fig_loss_trend = go.Figure()
             fig_loss_trend.add_trace(go.Bar(x=df_summary['Year'], y=df_summary['연간손실_m3'],
@@ -505,11 +506,11 @@ elif selected_menu == "1. 전환 추세 및 상세 분석":
         st.plotly_chart(fig_gu2, use_container_width=True)
 
     st.dataframe(df_gu_stock.style.format({'전환율': '{:.1f}%', '총청구계량기수': '{:,.0f}', '가스레인지연결전수': '{:,.0f}', '인덕션_추정_수': '{:,.0f}'}), use_container_width=True, hide_index=True)
-    st.download_button(f"📥 {sel_year}_구군별 다운로드", convert_df(df_gu_stock), f"{sel_year}_district.csv", "text/csv")
+    st.download_button(f"📥 {sel_year}_구군별_다운로드", convert_df(df_gu_stock), f"{sel_year}_구군별.csv", "text/csv")
 
     st.divider()
 
-    # [4] 상세분석: 지역별 흐름
+    # [4] 상세분석: 지역별 흐름 (12월 기준 Stock + 연간 Flow)
     st.subheader("4️⃣ 상세 분석: 지역(구군) 선택 ➡️ 연도별 흐름")
     sel_region = st.selectbox("🏙️ 지역(구군)을 선택하세요:", sorted(df['시군구'].unique()))
     
@@ -549,4 +550,4 @@ elif selected_menu == "1. 전환 추세 및 상세 분석":
         )
         st.plotly_chart(fig_r2, use_container_width=True)
     st.dataframe(df_r_filtered.style.format({'전환율': '{:.1f}%', '총청구계량기수': '{:,.0f}', '가스레인지연결전수': '{:,.0f}', '인덕션_추정_수': '{:,.0f}', '연간손실추정_m3': '{:,.0f}'}), use_container_width=True, hide_index=True)
-    st.download_button(f"📥 {sel_region}_데이터 다운로드", convert_df(df_r), f"{sel_region}_data.csv", "text/csv")
+    st.download_button(f"📥 {sel_region}_데이터 다운로드", convert_df(df_r), f"{sel_region}_데이터.csv", "text/csv")
