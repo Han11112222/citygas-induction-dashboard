@@ -17,7 +17,7 @@ st.set_page_config(
 # 2. 데이터 로드 및 유틸리티
 # ---------------------------------------------------------
 @st.cache_data(ttl=60)
-def load_data_final_v27(url):
+def load_data_final_v28(url):
     try:
         df = pd.read_excel(url, engine='openpyxl')
     except Exception as e:
@@ -48,7 +48,7 @@ def load_data_final_v27(url):
     return df
 
 @st.cache_data(ttl=60)
-def load_sales_data_final_v27():
+def load_sales_data_final_v28():
     """
     [판매량 데이터 로드]
     단위: 천m³ -> m³ (* 1000)
@@ -104,8 +104,8 @@ COLOR_TEXT_LIGHTGREY = 'lightgrey' # 그래프 내부 텍스트 색상
 # ---------------------------------------------------------
 gas_url = "https://raw.githubusercontent.com/Han11112222/citygas-induction-dashboard/main/(ver4)%EA%B0%80%EC%A0%95%EC%9A%A9_%EA%B0%80%EC%8A%A4%EB%A0%88%EC%9D%B8%EC%A7%80_%EC%82%AC%EC%9A%A9%EC%9C%A0%EB%AC%B4(201501_202412).xlsx"
 
-df_raw = load_data_final_v27(gas_url)
-df_sales_raw = load_sales_data_final_v27()
+df_raw = load_data_final_v28(gas_url)
+df_sales_raw = load_sales_data_final_v28()
 
 if df_raw.empty:
     st.error("🚨 기본 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
@@ -187,7 +187,7 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
         prev_data = df_summary[df_summary['Year'] == prev_year].iloc[0] if prev_year in df_summary['Year'].values else None
         start_data = df_summary[df_summary['Year'] == start_year].iloc[0] if start_year in df_summary['Year'].values else None
         
-        # 단가 (원페이지 리뷰 인사이트용 1,000원 적용)
+        # 매출액 계산용 단가
         unit_price_kpi = 1000
         
         # --- [형님 요청] 분석 인사이트 로직 계산 ---
@@ -206,8 +206,8 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
         # 3. 10% 초과 시점 찾기
         over_10_df = df_summary[df_summary['전환율'] > 10.0].sort_values('Year')
         if not over_10_df.empty:
-            first_over_year = over_10_df.iloc[0]['Year']
-            # "2019년 이후" 느낌을 살리기 위해
+            # [수정] float(2019.0) -> int(2019) 변환
+            first_over_year = int(over_10_df.iloc[0]['Year'])
             insight_3 = f"{first_over_year}년 이후 인덕션 사용률이 10%를 초과함"
         else:
             insight_3 = "아직 인덕션 사용률 10%를 초과한 연도가 없음"
@@ -248,13 +248,13 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
                 delta_color="inverse"
             )
 
-        # --- [핵심] 분석 인사이트 (형님 요청 4가지 내용 반영) ---
+        # --- [수정] 분석 인사이트 (특수기호 적용) ---
         st.info(f"""
         **💡 [분석 인사이트]**
-        1. {latest_year}년 기준, 인덕션 사용 비율은 **{latest_rate_val:.1f}%**
-        2. {insight_2}
-        3. {insight_3}
-        4. {insight_4}
+        ✔ {latest_year}년 기준, 인덕션 사용 비율은 **{latest_rate_val:.1f}%**
+        ✔ {insight_2}
+        ✔ {insight_3}
+        ✔ {insight_4}
         """)
         
         # 4. 요약 그래프
