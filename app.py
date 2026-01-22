@@ -17,7 +17,7 @@ st.set_page_config(
 # 2. 데이터 로드 및 유틸리티
 # ---------------------------------------------------------
 @st.cache_data(ttl=60)
-def load_data_final_v24(url):
+def load_data_final_v25(url):
     try:
         df = pd.read_excel(url, engine='openpyxl')
     except Exception as e:
@@ -48,7 +48,7 @@ def load_data_final_v24(url):
     return df
 
 @st.cache_data(ttl=60)
-def load_sales_data_final_v24():
+def load_sales_data_final_v25():
     """
     [판매량 데이터 로드]
     단위: 천m³ -> m³ (* 1000)
@@ -104,8 +104,8 @@ COLOR_TEXT_LIGHTGREY = 'lightgrey' # 그래프 내부 텍스트 색상
 # ---------------------------------------------------------
 gas_url = "https://raw.githubusercontent.com/Han11112222/citygas-induction-dashboard/main/(ver4)%EA%B0%80%EC%A0%95%EC%9A%A9_%EA%B0%80%EC%8A%A4%EB%A0%88%EC%9D%B8%EC%A7%80_%EC%82%AC%EC%9A%A9%EC%9C%A0%EB%AC%B4(201501_202412).xlsx"
 
-df_raw = load_data_final_v24(gas_url)
-df_sales_raw = load_sales_data_final_v24()
+df_raw = load_data_final_v25(gas_url)
+df_sales_raw = load_sales_data_final_v25()
 
 if df_raw.empty:
     st.error("🚨 기본 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
@@ -169,8 +169,6 @@ st.markdown(f"### 📊 {selected_menu}")
 # [MENU 0] 원페이지 리뷰 (One Page Review)
 # =========================================================
 if selected_menu == "원페이지 리뷰 (One Page Review)":
-    # [수정] 제목 중복 제거 (st.subheader 제거 or markdown으로 통일)
-    # 이미 상단에 st.markdown(f"### {selected_menu}")가 있으므로 여기서는 생략하거나 부가 설명만
     
     # 1. 데이터 준비 (비교: 최신 연도 vs 전년도)
     df_dec = df[df['Date'].dt.month == 12].copy()
@@ -225,7 +223,7 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
                 delta_color="inverse"
             )
 
-        # 3. [수정] 분석 인사이트 (1, 2, 3번 세로 배치)
+        # 3. 분석 인사이트 (1, 2, 3번 세로 배치)
         st.info(f"""
         **💡 [분석 인사이트] ({latest_year}년 12월 기준)**
         1. **전환 현황**: 전체 **{curr_data['총청구계량기수']:,.0f}세대** 중 약 **{curr_data['인덕션_추정_수']:,.0f}세대**가 인덕션을 사용하는 것으로 추정됩니다.
@@ -239,9 +237,10 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
         # 그래프 1: 전환율 추이
         with col1:
             fig_trend = go.Figure()
+            # [수정] textposition을 'top center'에서 'bottom center'로 변경하여 2024년 숫자 가시성 확보
             fig_trend.add_trace(go.Scatter(x=df_summary['Year'], y=df_summary['전환율'], mode='lines+markers+text',
                                         name='전환율', text=df_summary['전환율'].apply(lambda x: f"{x:.1f}%"),
-                                        textposition='top center', line=dict(color=COLOR_LINE, width=3)))
+                                        textposition='bottom center', line=dict(color=COLOR_LINE, width=3)))
             fig_trend.update_layout(title="연도별 인덕션 전환율 추이", height=400)
             st.plotly_chart(fig_trend, use_container_width=True)
             
@@ -510,7 +509,7 @@ elif selected_menu == "1. 전환 추세 및 상세 분석":
 
     st.divider()
 
-    # [4] 상세분석: 지역별 흐름 (12월 기준 Stock + 연간 Flow)
+    # [4] 상세분석: 지역별 흐름
     st.subheader("4️⃣ 상세 분석: 지역(구군) 선택 ➡️ 연도별 흐름")
     sel_region = st.selectbox("🏙️ 지역(구군)을 선택하세요:", sorted(df['시군구'].unique()))
     
