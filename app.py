@@ -17,7 +17,7 @@ st.set_page_config(
 # 2. 데이터 로드 및 유틸리티
 # ---------------------------------------------------------
 @st.cache_data(ttl=60)
-def load_data_final_v25(url):
+def load_data_final_v26(url):
     try:
         df = pd.read_excel(url, engine='openpyxl')
     except Exception as e:
@@ -48,7 +48,7 @@ def load_data_final_v25(url):
     return df
 
 @st.cache_data(ttl=60)
-def load_sales_data_final_v25():
+def load_sales_data_final_v26():
     """
     [판매량 데이터 로드]
     단위: 천m³ -> m³ (* 1000)
@@ -96,7 +96,7 @@ COLOR_INDUCTION = '#a4c2f4' # 연한 하늘색
 COLOR_LINE = '#d62728'      # 빨강 (비율 선)
 COLOR_LOSS_BLUE = '#115f9a' # 손실량 (딥 블루)
 COLOR_HIGHLIGHT_BG = '#a4c2f4' # 하이라이트 배경
-COLOR_HIGHLIGHT_LINE = '#1f77b4' # 하이라이트 선/텍스트
+COLOR_HIGHLIGHT_LINE = '#1f77b4' # 하이라이트 선
 COLOR_TEXT_LIGHTGREY = 'lightgrey' # 그래프 내부 텍스트 색상
 
 # ---------------------------------------------------------
@@ -104,8 +104,8 @@ COLOR_TEXT_LIGHTGREY = 'lightgrey' # 그래프 내부 텍스트 색상
 # ---------------------------------------------------------
 gas_url = "https://raw.githubusercontent.com/Han11112222/citygas-induction-dashboard/main/(ver4)%EA%B0%80%EC%A0%95%EC%9A%A9_%EA%B0%80%EC%8A%A4%EB%A0%88%EC%9D%B8%EC%A7%80_%EC%82%AC%EC%9A%A9%EC%9C%A0%EB%AC%B4(201501_202412).xlsx"
 
-df_raw = load_data_final_v25(gas_url)
-df_sales_raw = load_sales_data_final_v25()
+df_raw = load_data_final_v26(gas_url)
+df_sales_raw = load_sales_data_final_v26()
 
 if df_raw.empty:
     st.error("🚨 기본 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
@@ -133,7 +133,6 @@ with st.sidebar:
     st.markdown("---")
     st.header("🔍 데이터 필터")
     
-    # [PPH 용어 삭제 및 기본값 5.0]
     input_monthly_usage = st.number_input(
         "적용할 세대당 월평균 가스 사용량 (m³)", 
         min_value=0.0, 
@@ -170,7 +169,7 @@ st.markdown(f"### 📊 {selected_menu}")
 # =========================================================
 if selected_menu == "원페이지 리뷰 (One Page Review)":
     
-    # 1. 데이터 준비 (비교: 최신 연도 vs 전년도)
+    # 1. 데이터 준비
     df_dec = df[df['Date'].dt.month == 12].copy()
     
     # 연도별 집계
@@ -178,7 +177,7 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
     df_summary['전환율'] = (df_summary['인덕션_추정_수'] / df_summary['총청구계량기수']) * 100
     df_summary['연간손실_m3'] = df_summary['인덕션_추정_수'] * input_monthly_usage * 12
     
-    # 최신 연도와 전년도 추출
+    # 최신 연도
     latest_year = df_summary['Year'].max()
     prev_year = latest_year - 1
     
@@ -186,10 +185,10 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
         curr_data = df_summary[df_summary['Year'] == latest_year].iloc[0]
         prev_data = df_summary[df_summary['Year'] == prev_year].iloc[0] if prev_year in df_summary['Year'].values else None
         
-        # 매출액 계산용 단가
+        # 매출액 계산용 단가 (임시)
         unit_price = 950 
         
-        # 2. KPI 메트릭 표시
+        # 2. KPI 메트릭
         kpi1, kpi2, kpi3 = st.columns(3)
         
         with kpi1:
@@ -223,7 +222,7 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
                 delta_color="inverse"
             )
 
-        # 3. 분석 인사이트 (1, 2, 3번 세로 배치)
+        # 3. 분석 인사이트
         st.info(f"""
         **💡 [분석 인사이트] ({latest_year}년 12월 기준)**
         1. **전환 현황**: 전체 **{curr_data['총청구계량기수']:,.0f}세대** 중 약 **{curr_data['인덕션_추정_수']:,.0f}세대**가 인덕션을 사용하는 것으로 추정됩니다.
@@ -237,7 +236,6 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
         # 그래프 1: 전환율 추이
         with col1:
             fig_trend = go.Figure()
-            # [수정] textposition을 'top center'에서 'bottom center'로 변경하여 2024년 숫자 가시성 확보
             fig_trend.add_trace(go.Scatter(x=df_summary['Year'], y=df_summary['전환율'], mode='lines+markers+text',
                                         name='전환율', text=df_summary['전환율'].apply(lambda x: f"{x:.1f}%"),
                                         textposition='bottom center', line=dict(color=COLOR_LINE, width=3)))
@@ -252,6 +250,47 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
                                             text=df_summary['연간손실_m3'].apply(lambda x: f"{x:,.0f}"), textposition='auto'))
             fig_loss_trend.update_layout(title="연도별 추정 손실량 추이 (m³)", height=400)
             st.plotly_chart(fig_loss_trend, use_container_width=True)
+
+        st.divider()
+
+        # 5. [형님 요청] 연도별 요약 데이터 표 추가
+        st.markdown("#### 🔢 연도별 요약 데이터 (Data Table)")
+        
+        # 표 데이터 준비
+        df_table = df_summary.copy()
+        df_table['연간손실매출(억원)'] = (df_table['연간손실_m3'] * unit_price / 100000000)
+        
+        # 컬럼명 정리
+        df_table = df_table.rename(columns={
+            'Year': '연도',
+            '총청구계량기수': '총 계량기 수',
+            '인덕션_추정_수': '인덕션 추정 수',
+            '전환율': '전환율(%)',
+            '연간손실_m3': '연간 손실량(m³)'
+        })
+        
+        # 필요한 컬럼만 선택
+        cols_to_show = ['연도', '총 계량기 수', '인덕션 추정 수', '전환율(%)', '연간 손실량(m³)', '연간손실매출(억원)']
+        df_table = df_table[cols_to_show]
+        
+        # 표 출력 (하이라이트 적용)
+        st.dataframe(
+            df_table.style
+            .format({
+                '연도': '{}년',
+                '총 계량기 수': '{:,.0f}',
+                '인덕션 추정 수': '{:,.0f}',
+                '전환율(%)': '{:.1f}%',
+                '연간 손실량(m³)': '{:,.0f}',
+                '연간손실매출(억원)': '{:.2f}'
+            })
+            .set_properties(
+                subset=['전환율(%)', '연간 손실량(m³)'], 
+                **{'background-color': '#e6f3ff', 'font-weight': 'bold'} # 파란 계열 하이라이트
+            ),
+            use_container_width=True,
+            hide_index=True
+        )
 
     else:
         st.info("선택한 기간에 대한 데이터가 없습니다.")
@@ -300,8 +339,6 @@ elif selected_menu == "1. 전환 추세 및 상세 분석":
     df_year_stock = df_dec.groupby('Year')[['총청구계량기수', '가스레인지연결전수', '인덕션_추정_수']].sum().reset_index()
     df_year_stock['Year'] = df_year_stock['Year'].astype(int)
     df_year_stock['전환율'] = (df_year_stock['인덕션_추정_수'] / df_year_stock['총청구계량기수']) * 100
-    
-    # 연간 총 손실량 계산
     df_year_stock['연간손실추정_m3'] = df_year_stock['인덕션_추정_수'] * input_monthly_usage * 12
     
     if not df_sales_raw.empty:
@@ -335,7 +372,7 @@ elif selected_menu == "1. 전환 추세 및 상세 분석":
     fig_q.add_trace(go.Bar(x=df_year['Year'], y=df_year['가스레인지연결전수'], name='가스레인지(12월)', marker_color=COLOR_GAS), secondary_y=False)
     fig_q.add_trace(go.Bar(x=df_year['Year'], y=df_year['인덕션_추정_수'], name='인덕션(12월)', marker_color=COLOR_INDUCTION), secondary_y=False)
     
-    # [수정] 텍스트 위치: bottom center
+    # 텍스트 위치: bottom center
     fig_q.add_trace(go.Scatter(
         x=df_year['Year'], y=df_year['전환율'], name='전환율(%)', mode='lines+markers+text', 
         text=df_year['전환율'].apply(lambda x: f"{x:.1f}%"), 
@@ -345,16 +382,14 @@ elif selected_menu == "1. 전환 추세 및 상세 분석":
     ), secondary_y=True)
     
     if start_highlight_year:
-        # [수정] 하이라이트 투명도 0.4
+        # [수정] 텍스트 제거하고 라인/배경만 유지
         fig_q.add_vrect(
             x0=start_highlight_year-0.5, x1=end_highlight_year+0.5, 
             fillcolor=COLOR_HIGHLIGHT_BG, opacity=0.4, layer="below", line_width=0
         )
         fig_q.add_vline(
             x=start_highlight_year-0.5, line_width=2, line_dash="dash", line_color=COLOR_HIGHLIGHT_LINE,
-            annotation_text="🚀 전환 가속화", 
-            annotation_position="top left",
-            annotation_font=dict(size=14, color=COLOR_HIGHLIGHT_LINE, family="Arial Black")
+            # annotation_text="🚀 전환 가속화"  <-- 삭제됨
         )
 
     fig_q.update_layout(barmode='stack', legend=dict(orientation="h", y=1.1), height=500, hovermode="x unified")
@@ -391,7 +426,7 @@ elif selected_menu == "1. 전환 추세 및 상세 분석":
             hoverinfo='skip'
         ), secondary_y=False)
 
-    # 2축: 비중 (선) - [수정] 텍스트 위치 bottom center, lightgrey
+    # 2축: 비중 (선)
     fig_loss.add_trace(go.Scatter(
         x=df_year_filtered['Year'],
         y=df_year_filtered['손실점유율_가정'],
@@ -509,7 +544,7 @@ elif selected_menu == "1. 전환 추세 및 상세 분석":
 
     st.divider()
 
-    # [4] 상세분석: 지역별 흐름
+    # [4] 상세분석: 지역별 흐름 (12월 기준 Stock + 연간 Flow)
     st.subheader("4️⃣ 상세 분석: 지역(구군) 선택 ➡️ 연도별 흐름")
     sel_region = st.selectbox("🏙️ 지역(구군)을 선택하세요:", sorted(df['시군구'].unique()))
     
