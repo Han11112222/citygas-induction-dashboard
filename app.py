@@ -17,7 +17,7 @@ st.set_page_config(
 # 2. 데이터 로드 및 유틸리티
 # ---------------------------------------------------------
 @st.cache_data(ttl=60)
-def load_data_final_v28(url):
+def load_data_final_v29(url):
     try:
         df = pd.read_excel(url, engine='openpyxl')
     except Exception as e:
@@ -48,7 +48,7 @@ def load_data_final_v28(url):
     return df
 
 @st.cache_data(ttl=60)
-def load_sales_data_final_v28():
+def load_sales_data_final_v29():
     """
     [판매량 데이터 로드]
     단위: 천m³ -> m³ (* 1000)
@@ -104,8 +104,8 @@ COLOR_TEXT_LIGHTGREY = 'lightgrey' # 그래프 내부 텍스트 색상
 # ---------------------------------------------------------
 gas_url = "https://raw.githubusercontent.com/Han11112222/citygas-induction-dashboard/main/(ver4)%EA%B0%80%EC%A0%95%EC%9A%A9_%EA%B0%80%EC%8A%A4%EB%A0%88%EC%9D%B8%EC%A7%80_%EC%82%AC%EC%9A%A9%EC%9C%A0%EB%AC%B4(201501_202412).xlsx"
 
-df_raw = load_data_final_v28(gas_url)
-df_sales_raw = load_sales_data_final_v28()
+df_raw = load_data_final_v29(gas_url)
+df_sales_raw = load_sales_data_final_v29()
 
 if df_raw.empty:
     st.error("🚨 기본 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
@@ -177,7 +177,7 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
     df_summary['전환율'] = (df_summary['인덕션_추정_수'] / df_summary['총청구계량기수']) * 100
     df_summary['연간손실_m3'] = df_summary['인덕션_추정_수'] * input_monthly_usage * 12
     
-    # 최신 연도, 전년도, 시작 연도(2015) 데이터 추출
+    # 최신 연도, 전년도, 시작 연도
     latest_year = df_summary['Year'].max()
     prev_year = latest_year - 1
     start_year = df_summary['Year'].min()
@@ -190,73 +190,63 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
         # 매출액 계산용 단가
         unit_price_kpi = 1000
         
-        # --- [형님 요청] 분석 인사이트 로직 계산 ---
+        # --- 인사이트 데이터 계산 ---
         # 1. 최신 전환율
         latest_rate_val = curr_data['전환율']
         
-        # 2. 연평균 상승폭 (2015 ~ 2024)
+        # 2. 연평균 상승폭
         if start_data is not None:
             period_years = latest_year - start_year
             rate_diff = latest_rate_val - start_data['전환율']
             avg_growth = rate_diff / period_years if period_years > 0 else 0
-            insight_2 = f"{start_year}년 ({start_data['전환율']:.1f}%) ~ {latest_year}년 ({latest_rate_val:.1f}%)로 매년 약 {avg_growth:.2f}%p 정도로 상승중"
+            insight_2_growth = f"연평균 +{avg_growth:.2f}%p"
+            insight_2_range = f"({start_year}년 {start_data['전환율']:.1f}% → {latest_year}년 {latest_rate_val:.1f}%)"
         else:
-            insight_2 = "데이터 부족으로 상승폭 계산 불가"
+            insight_2_growth = "N/A"
+            insight_2_range = ""
 
-        # 3. 10% 초과 시점 찾기
+        # 3. 10% 초과 시점
         over_10_df = df_summary[df_summary['전환율'] > 10.0].sort_values('Year')
         if not over_10_df.empty:
-            # [수정] float(2019.0) -> int(2019) 변환
             first_over_year = int(over_10_df.iloc[0]['Year'])
-            insight_3 = f"{first_over_year}년 이후 인덕션 사용률이 10%를 초과함"
+            insight_3 = f"{first_over_year}년 이후 10% 초과"
         else:
-            insight_3 = "아직 인덕션 사용률 10%를 초과한 연도가 없음"
+            insight_3 = "아직 10% 미만"
 
-        # 4. 손실량 및 금액
+        # 4. 손실량
         loss_vol_val = curr_data['연간손실_m3']
-        loss_money_val = (loss_vol_val * unit_price_kpi) / 100000000 # 억원
-        insight_4 = f"{latest_year}년 기준, 추정 손실량은 {loss_vol_val/1000:,.0f}천 m³ (약 {loss_money_val:.0f}억원)"
-
-        # --- KPI 메트릭 표시 (3단 구성) ---
+        loss_money_val = (loss_vol_val * unit_price_kpi) / 100000000 
+        
+        # --- KPI 메트릭 (상단) ---
         kpi1, kpi2, kpi3 = st.columns(3)
         with kpi1:
             delta_val = (curr_data['전환율'] - prev_data['전환율']) if prev_data is not None else 0
-            st.metric(
-                label=f"🔥 {latest_year}년 인덕션 전환율",
-                value=f"{curr_data['전환율']:.1f}%",
-                delta=f"{delta_val:+.1f}%p (전년 대비)",
-                delta_color="inverse"
-            )
+            st.metric(label=f"🔥 {latest_year}년 인덕션 전환율", value=f"{curr_data['전환율']:.1f}%", delta=f"{delta_val:+.1f}%p (전년 대비)", delta_color="inverse")
         with kpi2:
-            loss_vol = curr_data['연간손실_m3']
-            prev_loss = prev_data['연간손실_m3'] if prev_data is not None else 0
-            delta_loss = loss_vol - prev_loss
-            st.metric(
-                label=f"📉 연간 추정 손실량 (m³)",
-                value=f"{loss_vol:,.0f} m³",
-                delta=f"{delta_loss:,.0f} m³ (전년 대비 증가)",
-                delta_color="inverse"
-            )
+            delta_loss = curr_data['연간손실_m3'] - (prev_data['연간손실_m3'] if prev_data is not None else 0)
+            st.metric(label=f"📉 연간 추정 손실량 (m³)", value=f"{loss_vol_val:,.0f} m³", delta=f"{delta_loss:,.0f} m³ (전년 대비)", delta_color="inverse")
         with kpi3:
-            loss_rev = loss_vol * unit_price_kpi
-            prev_rev = prev_loss * unit_price_kpi if prev_data is not None else 0
-            delta_rev = loss_rev - prev_rev
-            st.metric(
-                label=f"💰 연간 추정 손실 매출 (단가 {unit_price_kpi}원 기준)",
-                value=f"{loss_rev/100000000:.2f} 억원",
-                delta=f"{delta_rev/100000000:.2f} 억원 (전년 대비 증가)",
-                delta_color="inverse"
-            )
+            loss_rev = loss_vol_val * unit_price_kpi
+            delta_rev = loss_rev - (prev_data['연간손실_m3'] * unit_price_kpi if prev_data is not None else 0)
+            st.metric(label=f"💰 추정 손실 매출 (단가 {unit_price_kpi}원)", value=f"{loss_rev/100000000:.2f} 억원", delta=f"{delta_rev/100000000:.2f} 억원 (전년 대비)", delta_color="inverse")
 
-        # --- [수정] 분석 인사이트 (특수기호 적용) ---
-        st.info(f"""
-        **💡 [분석 인사이트]**
-        ✔ {latest_year}년 기준, 인덕션 사용 비율은 **{latest_rate_val:.1f}%**
-        ✔ {insight_2}
-        ✔ {insight_3}
-        ✔ {insight_4}
-        """)
+        # --- [형님 요청] 분석 인사이트 (가로 4단 카드 배치) ---
+        st.markdown(f"**💡 분석 인사이트 ({latest_year}년 12월 기준)**")
         
+        # 가로 4개 컬럼 생성
+        i1, i2, i3, i4 = st.columns(4)
+        
+        with i1:
+            st.info(f"**✔ 현재 전환율**\n\n{latest_year}년 기준\n**{latest_rate_val:.1f}%**")
+        with i2:
+            st.info(f"**✔ 상승 추세**\n\n{insight_2_growth}\n{insight_2_range}")
+        with i3:
+            st.info(f"**✔ 가속화 시점**\n\n{insight_3}\n(전환 가속화)")
+        with i4:
+            st.info(f"**✔ 손실 규모**\n\n{loss_vol_val/1000:,.0f}천 m³\n**(약 {loss_money_val:.0f}억원)**")
+        
+        st.markdown("---")
+
         # 4. 요약 그래프
         col1, col2 = st.columns(2)
         
@@ -451,7 +441,7 @@ elif selected_menu == "1. 전환 추세 및 상세 분석":
             hoverinfo='skip'
         ), secondary_y=False)
 
-    # 2축: 비중 (선)
+    # 2축: 비중 (선) - [수정] 텍스트 위치 bottom center, lightgrey
     fig_loss.add_trace(go.Scatter(
         x=df_year_filtered['Year'],
         y=df_year_filtered['손실점유율_가정'],
