@@ -187,7 +187,7 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
         prev_data = df_summary[df_summary['Year'] == prev_year].iloc[0] if prev_year in df_summary['Year'].values else None
         start_data = df_summary[df_summary['Year'] == start_year].iloc[0] if start_year in df_summary['Year'].values else None
         
-        # 매출액 계산용 단가
+        # [수정] 매출액 계산용 단가 1,000원으로 통일
         unit_price_kpi = 1000
         
         # --- 인사이트 데이터 계산 ---
@@ -213,10 +213,7 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
         else:
             insight_3 = "아직 10% 미만"
 
-        # 4. 전당 사용량 감소 멘트
-        insight_4_ment = "개별난방 전당 사용량이 줄어드는 요인으로 작용"
-
-        # 5. 손실량 및 금액
+        # 4. 손실량
         loss_vol_val = curr_data['연간손실_m3']
         loss_money_val = (loss_vol_val * unit_price_kpi) / 100000000 
         
@@ -234,7 +231,7 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
             st.metric(label=f"💰 추정 손실 매출 (단가 {unit_price_kpi}원)", value=f"{loss_rev/100000000:.2f} 억원", delta=f"{delta_rev/100000000:.2f} 억원 (전년 대비)", delta_color="inverse")
 
         # --- [형님 요청] 분석 인사이트 (세로 리스트형 - 수정됨) ---
-        # st.columns(5) 제거하고 st.info 박스 하나에 세로로 나열
+        # st.info 박스 하나에 줄바꿈으로 세로 나열 + 4번 항목 추가
         st.info(f"""
         **💡 분석 인사이트 ({latest_year}년 12월 기준)**
         
@@ -244,7 +241,7 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
         
         **✔ 가속화 시점 :** {insight_3} (전환 가속화)
         
-        **✔ 전당 사용량 감소 :** {insight_4_ment}
+        **✔ 전당 사용량 감소 :** 개별난방 전당 사용량이 줄어드는 요인으로 작용
         
         **✔ 손실 규모 :** {loss_vol_val/1000:,.0f}천 m³ **(약 {loss_money_val:.0f}억원)**
         """)
@@ -401,14 +398,13 @@ elif selected_menu == "1. 전환 추세 및 상세 분석":
     ), secondary_y=True)
     
     if start_highlight_year:
-        # [수정] 텍스트 제거하고 라인/배경만 유지
+        # 텍스트 제거하고 라인/배경만 유지
         fig_q.add_vrect(
             x0=start_highlight_year-0.5, x1=end_highlight_year+0.5, 
             fillcolor=COLOR_HIGHLIGHT_BG, opacity=0.4, layer="below", line_width=0
         )
         fig_q.add_vline(
             x=start_highlight_year-0.5, line_width=2, line_dash="dash", line_color=COLOR_HIGHLIGHT_LINE,
-            # annotation_text 제거됨
         )
 
     fig_q.update_layout(barmode='stack', legend=dict(orientation="h", y=1.1), height=500, hovermode="x unified")
@@ -445,7 +441,7 @@ elif selected_menu == "1. 전환 추세 및 상세 분석":
             hoverinfo='skip'
         ), secondary_y=False)
 
-    # 2축: 비중 (선) - [수정] 텍스트 위치 bottom center, lightgrey
+    # 2축: 비중 (선) - 텍스트 위치 bottom center, lightgrey
     fig_loss.add_trace(go.Scatter(
         x=df_year_filtered['Year'],
         y=df_year_filtered['손실점유율_가정'],
@@ -462,12 +458,12 @@ elif selected_menu == "1. 전환 추세 및 상세 분석":
     fig_loss.update_yaxes(title_text="손실 비중 (%)", secondary_y=True, range=[0, df_year_filtered['손실점유율_가정'].max()*1.2], showticklabels=False)
     st.plotly_chart(fig_loss, use_container_width=True)
 
-    # [계산기]
+    # [계산기] - [수정] 기본값 1000으로 변경
     with st.expander("💰 손실 매출 시뮬레이터 (계산기)", expanded=True):
         if pd.notna(latest_year_val):
             c_calc1, c_calc2 = st.columns([1, 2])
             with c_calc1:
-                input_price = st.number_input("소매단가(원/m³)", value=950, step=10)
+                input_price = st.number_input("소매단가(원/m³)", value=1000, step=10) # [수정] 기본값 950 -> 1000
             with c_calc2:
                 loss_revenue = latest_loss_val * input_price
                 st.metric(
