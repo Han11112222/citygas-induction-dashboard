@@ -17,7 +17,7 @@ st.set_page_config(
 # 2. 데이터 로드 및 유틸리티
 # ---------------------------------------------------------
 @st.cache_data(ttl=60)
-def load_data_final_v26(url):
+def load_data_final_v27(url):
     try:
         df = pd.read_excel(url, engine='openpyxl')
     except Exception as e:
@@ -48,7 +48,7 @@ def load_data_final_v26(url):
     return df
 
 @st.cache_data(ttl=60)
-def load_sales_data_final_v26():
+def load_sales_data_final_v27():
     """
     [판매량 데이터 로드]
     단위: 천m³ -> m³ (* 1000)
@@ -104,8 +104,8 @@ COLOR_TEXT_LIGHTGREY = 'lightgrey' # 그래프 내부 텍스트 색상
 # ---------------------------------------------------------
 gas_url = "https://raw.githubusercontent.com/Han11112222/citygas-induction-dashboard/main/(ver4)%EA%B0%80%EC%A0%95%EC%9A%A9_%EA%B0%80%EC%8A%A4%EB%A0%88%EC%9D%B8%EC%A7%80_%EC%82%AC%EC%9A%A9%EC%9C%A0%EB%AC%B4(201501_202412).xlsx"
 
-df_raw = load_data_final_v26(gas_url)
-df_sales_raw = load_sales_data_final_v26()
+df_raw = load_data_final_v27(gas_url)
+df_sales_raw = load_sales_data_final_v27()
 
 if df_raw.empty:
     st.error("🚨 기본 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
@@ -177,20 +177,48 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
     df_summary['전환율'] = (df_summary['인덕션_추정_수'] / df_summary['총청구계량기수']) * 100
     df_summary['연간손실_m3'] = df_summary['인덕션_추정_수'] * input_monthly_usage * 12
     
-    # 최신 연도
+    # 최신 연도, 전년도, 시작 연도(2015) 데이터 추출
     latest_year = df_summary['Year'].max()
     prev_year = latest_year - 1
+    start_year = df_summary['Year'].min()
     
     if not df_summary.empty:
         curr_data = df_summary[df_summary['Year'] == latest_year].iloc[0]
         prev_data = df_summary[df_summary['Year'] == prev_year].iloc[0] if prev_year in df_summary['Year'].values else None
+        start_data = df_summary[df_summary['Year'] == start_year].iloc[0] if start_year in df_summary['Year'].values else None
         
-        # 매출액 계산용 단가 (임시)
-        unit_price = 950 
+        # 단가 (원페이지 리뷰 인사이트용 1,000원 적용)
+        unit_price_kpi = 1000
         
-        # 2. KPI 메트릭
+        # --- [형님 요청] 분석 인사이트 로직 계산 ---
+        # 1. 최신 전환율
+        latest_rate_val = curr_data['전환율']
+        
+        # 2. 연평균 상승폭 (2015 ~ 2024)
+        if start_data is not None:
+            period_years = latest_year - start_year
+            rate_diff = latest_rate_val - start_data['전환율']
+            avg_growth = rate_diff / period_years if period_years > 0 else 0
+            insight_2 = f"{start_year}년 ({start_data['전환율']:.1f}%) ~ {latest_year}년 ({latest_rate_val:.1f}%)로 매년 약 {avg_growth:.2f}%p 정도로 상승중"
+        else:
+            insight_2 = "데이터 부족으로 상승폭 계산 불가"
+
+        # 3. 10% 초과 시점 찾기
+        over_10_df = df_summary[df_summary['전환율'] > 10.0].sort_values('Year')
+        if not over_10_df.empty:
+            first_over_year = over_10_df.iloc[0]['Year']
+            # "2019년 이후" 느낌을 살리기 위해
+            insight_3 = f"{first_over_year}년 이후 인덕션 사용률이 10%를 초과함"
+        else:
+            insight_3 = "아직 인덕션 사용률 10%를 초과한 연도가 없음"
+
+        # 4. 손실량 및 금액
+        loss_vol_val = curr_data['연간손실_m3']
+        loss_money_val = (loss_vol_val * unit_price_kpi) / 100000000 # 억원
+        insight_4 = f"{latest_year}년 기준, 추정 손실량은 {loss_vol_val/1000:,.0f}천 m³ (약 {loss_money_val:.0f}억원)"
+
+        # --- KPI 메트릭 표시 (3단 구성) ---
         kpi1, kpi2, kpi3 = st.columns(3)
-        
         with kpi1:
             delta_val = (curr_data['전환율'] - prev_data['전환율']) if prev_data is not None else 0
             st.metric(
@@ -199,7 +227,6 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
                 delta=f"{delta_val:+.1f}%p (전년 대비)",
                 delta_color="inverse"
             )
-            
         with kpi2:
             loss_vol = curr_data['연간손실_m3']
             prev_loss = prev_data['연간손실_m3'] if prev_data is not None else 0
@@ -210,24 +237,24 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
                 delta=f"{delta_loss:,.0f} m³ (전년 대비 증가)",
                 delta_color="inverse"
             )
-
         with kpi3:
-            loss_rev = loss_vol * unit_price
-            prev_rev = prev_loss * unit_price
+            loss_rev = loss_vol * unit_price_kpi
+            prev_rev = prev_loss * unit_price_kpi if prev_data is not None else 0
             delta_rev = loss_rev - prev_rev
             st.metric(
-                label=f"💰 연간 추정 손실 매출 (단가 {unit_price}원 기준)",
+                label=f"💰 연간 추정 손실 매출 (단가 {unit_price_kpi}원 기준)",
                 value=f"{loss_rev/100000000:.2f} 억원",
                 delta=f"{delta_rev/100000000:.2f} 억원 (전년 대비 증가)",
                 delta_color="inverse"
             )
 
-        # 3. 분석 인사이트
+        # --- [핵심] 분석 인사이트 (형님 요청 4가지 내용 반영) ---
         st.info(f"""
-        **💡 [분석 인사이트] ({latest_year}년 12월 기준)**
-        1. **전환 현황**: 전체 **{curr_data['총청구계량기수']:,.0f}세대** 중 약 **{curr_data['인덕션_추정_수']:,.0f}세대**가 인덕션을 사용하는 것으로 추정됩니다.
-        2. **손실 규모**: 이로 인해 연간 약 **{loss_vol:,.0f}m³**의 판매량 감소가 발생하고 있으며, 이는 전년 대비 **{delta_loss:,.0f}m³** 확대된 수치입니다.
-        3. **산출 근거**: 12월 말 기준 인덕션 추정 세대수 × 월평균 {input_monthly_usage}m³ × 12개월
+        **💡 [분석 인사이트]**
+        1. {latest_year}년 기준, 인덕션 사용 비율은 **{latest_rate_val:.1f}%**
+        2. {insight_2}
+        3. {insight_3}
+        4. {insight_4}
         """)
         
         # 4. 요약 그래프
@@ -253,14 +280,12 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
 
         st.divider()
 
-        # 5. [형님 요청] 연도별 요약 데이터 표 추가
+        # 5. 연도별 요약 데이터 표
         st.markdown("#### 🔢 연도별 요약 데이터 (Data Table)")
         
-        # 표 데이터 준비
         df_table = df_summary.copy()
-        df_table['연간손실매출(억원)'] = (df_table['연간손실_m3'] * unit_price / 100000000)
+        df_table['연간손실매출(억원)'] = (df_table['연간손실_m3'] * unit_price_kpi / 100000000)
         
-        # 컬럼명 정리
         df_table = df_table.rename(columns={
             'Year': '연도',
             '총청구계량기수': '총 계량기 수',
@@ -269,11 +294,9 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
             '연간손실_m3': '연간 손실량(m³)'
         })
         
-        # 필요한 컬럼만 선택
         cols_to_show = ['연도', '총 계량기 수', '인덕션 추정 수', '전환율(%)', '연간 손실량(m³)', '연간손실매출(억원)']
         df_table = df_table[cols_to_show]
         
-        # 표 출력 (하이라이트 적용)
         st.dataframe(
             df_table.style
             .format({
@@ -286,7 +309,7 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
             })
             .set_properties(
                 subset=['전환율(%)', '연간 손실량(m³)'], 
-                **{'background-color': '#e6f3ff', 'font-weight': 'bold'} # 파란 계열 하이라이트
+                **{'background-color': '#e6f3ff', 'font-weight': 'bold'}
             ),
             use_container_width=True,
             hide_index=True
@@ -339,6 +362,8 @@ elif selected_menu == "1. 전환 추세 및 상세 분석":
     df_year_stock = df_dec.groupby('Year')[['총청구계량기수', '가스레인지연결전수', '인덕션_추정_수']].sum().reset_index()
     df_year_stock['Year'] = df_year_stock['Year'].astype(int)
     df_year_stock['전환율'] = (df_year_stock['인덕션_추정_수'] / df_year_stock['총청구계량기수']) * 100
+    
+    # 연간 총 손실량 계산
     df_year_stock['연간손실추정_m3'] = df_year_stock['인덕션_추정_수'] * input_monthly_usage * 12
     
     if not df_sales_raw.empty:
@@ -389,7 +414,7 @@ elif selected_menu == "1. 전환 추세 및 상세 분석":
         )
         fig_q.add_vline(
             x=start_highlight_year-0.5, line_width=2, line_dash="dash", line_color=COLOR_HIGHLIGHT_LINE,
-            # annotation_text="🚀 전환 가속화"  <-- 삭제됨
+            # annotation_text 제거됨
         )
 
     fig_q.update_layout(barmode='stack', legend=dict(orientation="h", y=1.1), height=500, hovermode="x unified")
