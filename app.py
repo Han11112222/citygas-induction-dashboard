@@ -17,7 +17,7 @@ st.set_page_config(
 # 2. 데이터 로드 및 유틸리티
 # ---------------------------------------------------------
 @st.cache_data(ttl=60)
-def load_data_final_v30(url):
+def load_data_final_v31(url):
     try:
         df = pd.read_excel(url, engine='openpyxl')
     except Exception as e:
@@ -48,7 +48,7 @@ def load_data_final_v30(url):
     return df
 
 @st.cache_data(ttl=60)
-def load_sales_data_final_v30():
+def load_sales_data_final_v31():
     """
     [판매량 데이터 로드]
     단위: 천m³ -> m³ (* 1000)
@@ -104,8 +104,8 @@ COLOR_TEXT_LIGHTGREY = 'lightgrey' # 그래프 내부 텍스트 색상
 # ---------------------------------------------------------
 gas_url = "https://raw.githubusercontent.com/Han11112222/citygas-induction-dashboard/main/(ver4)%EA%B0%80%EC%A0%95%EC%9A%A9_%EA%B0%80%EC%8A%A4%EB%A0%88%EC%9D%B8%EC%A7%80_%EC%82%AC%EC%9A%A9%EC%9C%A0%EB%AC%B4(201501_202412).xlsx"
 
-df_raw = load_data_final_v30(gas_url)
-df_sales_raw = load_sales_data_final_v30()
+df_raw = load_data_final_v31(gas_url)
+df_sales_raw = load_sales_data_final_v31()
 
 if df_raw.empty:
     st.error("🚨 기본 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
@@ -214,7 +214,7 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
             insight_3 = "아직 10% 미만"
 
         # 4. 전당 사용량 감소 멘트
-        insight_4_ment = "개별난방 전당 사용량이\n줄어드는 요인으로 작용"
+        insight_4_ment = "개별난방 전당 사용량이 줄어드는 요인으로 작용"
 
         # 5. 손실량 및 금액
         loss_vol_val = curr_data['연간손실_m3']
@@ -233,23 +233,21 @@ if selected_menu == "원페이지 리뷰 (One Page Review)":
             delta_rev = loss_rev - (prev_data['연간손실_m3'] * unit_price_kpi if prev_data is not None else 0)
             st.metric(label=f"💰 추정 손실 매출 (단가 {unit_price_kpi}원)", value=f"{loss_rev/100000000:.2f} 억원", delta=f"{delta_rev/100000000:.2f} 억원 (전년 대비)", delta_color="inverse")
 
-        # --- [형님 요청] 분석 인사이트 (가로 5단 배치 - 수정됨) ---
-        st.markdown(f"**💡 분석 인사이트 ({latest_year}년 12월 기준)**")
+        # --- [형님 요청] 분석 인사이트 (세로 리스트형 - 수정됨) ---
+        # st.columns(5) 제거하고 st.info 박스 하나에 세로로 나열
+        st.info(f"""
+        **💡 분석 인사이트 ({latest_year}년 12월 기준)**
         
-        # [핵심] 가로 5개 컬럼으로 분할
-        i1, i2, i3, i4, i5 = st.columns(5)
+        **✔ 현재 전환율 :** {latest_year}년 기준 **{latest_rate_val:.1f}%**
         
-        with i1:
-            st.info(f"**✔ 현재 전환율**\n\n{latest_year}년 기준\n**{latest_rate_val:.1f}%**")
-        with i2:
-            st.info(f"**✔ 상승 추세**\n\n{insight_2_growth}\n{insight_2_range}")
-        with i3:
-            st.info(f"**✔ 가속화 시점**\n\n{insight_3}\n(전환 가속화)")
-        with i4:
-            # [신규] 전당 사용량 감소 요인 추가
-            st.info(f"**✔ 전당 사용량 감소**\n\n{insight_4_ment}")
-        with i5:
-            st.info(f"**✔ 손실 규모**\n\n{loss_vol_val/1000:,.0f}천 m³\n**(약 {loss_money_val:.0f}억원)**")
+        **✔ 상승 추세 :** {insight_2_growth} {insight_2_range}
+        
+        **✔ 가속화 시점 :** {insight_3} (전환 가속화)
+        
+        **✔ 전당 사용량 감소 :** {insight_4_ment}
+        
+        **✔ 손실 규모 :** {loss_vol_val/1000:,.0f}천 m³ **(약 {loss_money_val:.0f}억원)**
+        """)
         
         st.markdown("---")
 
